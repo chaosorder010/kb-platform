@@ -1,0 +1,78 @@
+[project]
+name = "shopkeeper-brain"
+version = "0.1.0"
+description = "掌柜智库 - 企业级 RAG 系统"
+requires-python = ">=3.12"
+dependencies = [
+    # Web 框架
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.0",
+
+    # 环境配置
+    "python-dotenv>=1.0",
+
+    # LangChain / LangGraph 编排
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "langchain-text-splitters>=0.3.0",
+    "langgraph>=0.2.0",
+
+    # AI / LLM
+    "openai>=1.60",
+    "openai-agents>=0.0.7",
+
+    # 向量数据库 & 存储
+    "pymilvus>=2.5.0",
+    "minio>=7.0",
+    "pymongo>=4.0",
+
+    # PDF 解析
+    "mineru[all]>=2.0",
+
+    # 图谱/流程可视化
+    "grandalf>=0.8",
+
+    # 可观测性
+    "langfuse>=2.0.0",
+]
+
+[project.optional-dependencies]
+# GPU 嵌入 & 精排模型（需要 CUDA）
+gpu = [
+    "torch>=2.5.0",
+    "transformers>=4.44.0",
+    "sentence-transformers>=3.0",
+    "FlagEmbedding>=1.4.0",
+]
+
+# 开发工具
+dev = [
+    "httpx>=0.28.0",
+    "python-multipart>=0.0.18",
+]
+
+[tool.uv]
+# 中国大陆镜像加速
+index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+# 启动说明（注释形式保留，避免破坏 TOML 解析）
+# 1. 安装 uv（如没有）
+#    pip install uv
+#
+# 2. 进入项目根目录，创建虚拟环境
+#    uv venv
+#
+# 3. 安装依赖（含 GPU 模型）
+#    source .venv/bin/activate
+#    uv pip install -e ".[gpu,dev]"
+#
+# 4. 启动基础设施
+#    docker compose up -d
+#
+# 5. 启动服务（两个终端）
+#    python knowledge/api/import_router.py   # 导入服务 :8001
+#    python knowledge/api/query_router.py    # 查询服务 :8002
+#
+# 已配置清华 PyPI 镜像。[gpu] 可选组包含 torch、transformers、
+# FlagEmbedding、sentence-transformers；如果机器没有 CUDA，可以去掉它。
