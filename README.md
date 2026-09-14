@@ -1,7 +1,7 @@
-# 掌柜智库 (Shopkeeper Brain) — 企业级 RAG 智能知识库系统
+# 知识库管理平台（掌柜智库）
 
-基于 **LangGraph 多节点管道** + **BGE-M3 微调嵌入** + **混合检索** 的企业级 RAG（检索增强生成）系统，
-支持 PDF/Markdown 文档智能导入、精准语义检索、联网搜索增强，面向电子产品手册、技术文档等场景。
+企业级 RAG 智能知识库系统。后端统一入口：`knowledge/api/app_main.py`（`/api/*`，默认 :8000）；前端：`frontend/`（React + Vite + Ant Design）。
+基于 **LangGraph 多节点管道** + **BGE-M3 微调嵌入** + **混合检索**，支持文档智能导入、精准语义检索、联网搜索增强。
 
 > **项目级别对标**：独立完成此项目，在二三线互联网 / 传统企业可对标 **P7 ~ P8（技术主管 / 架构师）**，
 > 在大厂 AI 应用方向可对标 **P6+ ~ P7**。核心依据：BGE-M3 模型微调、多节点 LangGraph 管道编排、
@@ -31,33 +31,19 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    前端 (chat.html / import.html /   │
-│                          dashboard.html)              │
-│                  FastAPI StaticFiles 托管             │
-└──────────┬──────────────────────────┬───────────────┘
-           │                          │
-    查询服务 :8002               导入服务 :8001
-    (query_router.py)          (import_router.py)
-    + /metrics/* 端点           + /metrics/* 端点
-           │                          │
-     ┌─────┴──────┐          ┌────────┴────────┐
-     │ LangGraph   │          │  LangGraph       │
-     │ 查询管道    │          │  导入管道        │
-     │             │          │                  │
-     │ ①商品确认   │          │ ①入口节点        │
-     │ ②混合检索   │          │ ②PDF→MD(MinerU) │
-     │ ③HyDE检索   │          │ ③MD→图片(VLM)   │
-     │ ④WebSearch  │          │ ④文档切分        │
-     │ ⑤RRF融合    │          │ ⑤商品名识别(LLM) │
-     │ ⑥Reranker   │          │ ⑥向量嵌入(BGE)  │
-     │ ⑦答案生成   │          │ ⑦Milvus入库      │
-     └─────┬──────┘          └────────┬────────┘
-           │                          │
-     ┌─────┼──────────────┬───────────┤
-     │     │              │           │
-  Milvus  MongoDB    DashScope    MinIO      LangFuse
- (向量库) (对话历史) (LLM/嵌入)  (对象存储)  (可观测性)
-                                                :3000
+│  frontend/  React + Vite + Ant Design  :5173         │
+│  开发代理 /api → 统一后端                            │
+└──────────────────────────┬──────────────────────────┘
+                           │
+              统一 API :8000  knowledge/api/app_main.py
+                           │
+           ┌───────────────┴───────────────┐
+           │                               │
+     LangGraph 查询管道              LangGraph 导入管道
+           │                               │
+     ┌─────┼──────────────┬────────────────┤
+     │     │              │                │
+  Milvus  MongoDB    DashScope    MinIO   LangFuse
 ```
 
 ---
@@ -76,63 +62,27 @@
 | **PDF 解析** | MinerU（PDF → Markdown，支持表格、公式） |
 | **Web 框架** | FastAPI + Uvicorn + SSE 流式推送 |
 | **MCP 协议** | openai-agents + MCPServerStreamableHttp（DashScope WebSearch） |
-| **可观测性** | LangFuse 全链路追踪 + JSON 结构化日志 + Chart.js 仪表盘 |
-| **前端** | 原生 HTML/CSS/JS（无框架依赖，暗色主题） |
+| **可观测性** | LangFuse 全链路追踪 + JSON 结构化日志 |
+| **前端** | React + Vite + Ant Design（`frontend/`） |
 
 ---
 
 ## 项目结构
 
 ```
-shopkeeper_brain/
+kb-platform/
+├── frontend/                           # React + Vite + Ant Design
 ├── knowledge/                          # 核心知识库模块
-│   ├── api/                            # FastAPI 路由
-│   │   ├── import_router.py            # 导入服务（:8001）
-│   │   ├── query_router.py             # 查询服务（:8002）
-│   │   └── metrics_router.py           # 指标 API（/metrics/*）
-│   ├── core/                           # 核心配置
-│   │   ├── deps.py                     # 依赖注入
-│   │   └── paths.py                    # 路径管理
-│   ├── front/                          # 前端页面
-│   │   ├── import.html                 # 文件上传页面
-│   │   ├── chat.html                   # 对话查询页面
-│   │   └── dashboard.html              # 可观测性仪表盘
-│   ├── processor/                      # LangGraph 管道
-│   │   ├── import_processor/           # 导入管道
-│   │   │   ├── main_graph.py           # 图谱编排
-│   │   │   ├── nodes/                  # 7 个节点
-│   │   │   ├── state.py / config.py    # 状态与配置
-│   │   │   └── exceptions.py           # 异常定义
-│   │   └── query_processor/            # 查询管道
-│   │       ├── main_graph.py           # 图谱编排
-│   │       ├── nodes/                  # 8 个节点
-│   │       ├── state.py / config.py    # 状态与配置
-│   │       └── exceptions.py           # 异常定义
-│   ├── prompts/                        # LLM 提示词模板
-│   ├── schema/                         # Pydantic 数据模型
-│   ├── service/                        # 业务服务层
-│   ├── utils/                          # 工具函数
-│   │   ├── client/                     # AI/存储客户端（单例+双重检查锁）
-│   │   │   ├── ai_clients.py           # LLM/VLM/BGE 客户端
-│   │   │   ├── storage_clients.py      # MinIO/Milvus 客户端
-│   │   │   └── base.py                 # 客户端管理器基类
-│   │   ├── embedding_util.py           # 嵌入工具
-│   │   ├── milvus_util.py              # Milvus 混合搜索
-│   │   ├── mongo_history_util.py       # MongoDB 对话历史
-│   │   ├── sse_util.py                 # SSE 流式推送
-│   │   ├── task_util.py                # 任务状态追踪
-│   │   ├── trace_util.py               # LangFuse Trace 管理器
-│   │   ├── metrics_util.py             # 指标聚合器
-│   │   └── log_util.py                 # JSON 结构化日志
-│   └── test/                           # 测试用例
-├── eval/                               # 模型评估
-│   ├── finetune_bge_m3.py              # LoRA 微调脚本
-│   ├── build_hard_negatives.py         # 难负例构建
-│   ├── evaluate_retrieval.py           # 检索评估
-│   ├── evaluation_summary.txt          # 评估报告（95% Recall@1）
-│   ├── finetuned_bge_m3/               # 微调后的模型
-│   └── *_qa.csv                        # 按文档分拆的 QA 数据
-└── 项目环境配置&服务部署指南.md          # 部署文档
+│   ├── api/
+│   │   ├── app_main.py                 # 统一入口（:8000，/api/*）
+│   │   ├── import_router.py            # 导入 APIRouter
+│   │   ├── query_router.py             # 查询 APIRouter
+│   │   └── metrics_router.py           # 指标 API
+│   ├── core/ / processor/ / service/   # 配置、管道、业务层
+│   ├── front/                          # 旧 HTML 页面
+│   └── test/
+├── eval/                               # 模型评估与微调
+└── 项目环境配置&服务部署指南.md
 ```
 
 ---
@@ -256,29 +206,28 @@ docker compose up -d
 | **Attu**（Milvus 管理） | `http://192.168.10.140:7000` | Milvus 图形化管理界面 |
 | **MinIO Console** | `http://192.168.10.140:9001` | 对象存储管理 |
 | **LangFuse** | `http://192.168.10.140:3000` | LLM 可观测性平台（Trace/Token/成本） |
-| **导入服务** | `http://localhost:8001` | 文档上传页面 |
-| **查询服务** | `http://localhost:8002` | 对话查询页面 |
-| **指标仪表盘** | `http://localhost:8002/front/dashboard.html` | 实时请求统计和节点耗时 |
-| **指标 API** | `http://localhost:8002/metrics/overview` | JSON 格式汇总指标 |
+| **统一 API** | `http://localhost:8000` | `GET /api/health` |
+| **前端开发服** | `http://localhost:5173` | React 应用 |
 
 ### 4. 启动应用
 
 ```bash
-# 终端 1 — 导入服务
-cd knowledge
-python api/import_router.py
-# → http://localhost:8001/front/import.html
+# 终端 1 — 统一后端
+PYTHONPATH=. python -m knowledge.api.app_main
+# → http://localhost:8000/api/health
 
-# 终端 2 — 查询服务
-python api/query_router.py
-# → http://localhost:8002/front/chat.html
+# 终端 2 — 前端
+cd frontend
+npm install
+npm run dev
+# → http://localhost:5173
 ```
 
 ### 5. 使用流程
 
-1. 打开导入页面，上传 PDF/Markdown 文档
-2. 等待后台处理完成（状态轮询）
-3. 打开对话页面，输入问题查询
+1. 启动统一后端与前端开发服
+2. 打开 `http://localhost:5173`
+3. 用 `http://localhost:8000/api/health` 确认 API 存活
 
 ---
 
