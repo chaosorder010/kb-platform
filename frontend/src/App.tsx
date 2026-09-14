@@ -3,6 +3,7 @@ import { useMemo, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { getAccessToken, getPermissions, hasPermission } from "./auth";
 import LoginPage from "./pages/Login";
+import KnowledgePage from "./pages/Knowledge";
 import OrgPage from "./pages/Org";
 import ProfilePage from "./pages/Profile";
 
@@ -103,7 +104,7 @@ export default function App() {
             path="/knowledge"
             element={
               <RequirePerm code="menu:knowledge">
-                <Page title="知识单元" />
+                <KnowledgePage />
               </RequirePerm>
             }
           />

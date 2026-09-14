@@ -30,16 +30,9 @@ class UpLoadService:
     处理文件上传相关的逻辑
     """
 
-    def run_import_graph(self, task_id: str, import_file_path: str, file_dir: str):
+    def run_import_graph(self, task_id: str, import_file_path: str, file_dir: str, unit_id: str = ""):
         """
-        运行整个图谱流程
-        Args:
-            task_id:
-            import_file_path:
-            file_dir:
-
-        Returns:
-
+        运行导入图
         """
 
         # 1. 更新任务状态为processing
@@ -53,6 +46,7 @@ class UpLoadService:
                 "task_id": task_id,
                 "import_file_path": import_file_path,
                 "file_dir": file_dir,
+                "unit_id": unit_id,
             },
         )
         trace_id = trace.id if trace else ""
@@ -63,6 +57,7 @@ class UpLoadService:
             "import_file_path": import_file_path,
             "file_dir": file_dir,
             "trace_id": trace_id,
+            "unit_id": unit_id,
         }
 
         # stream:迭代整个graph图状态可以得到每一个节点的事件(节点的名字以及节点操作完state之后的新状态)

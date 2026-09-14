@@ -59,6 +59,8 @@ class ImportGraphState(TypedDict, total=False):
     chunks: List  # 文档切片列表
     trace_id: str  # LangFuse Trace ID
 
+    unit_id: str  # 知识单元 ID，写入 Milvus chunk
+
     # ==================== 默认状态 ====================
 
 
@@ -88,6 +90,7 @@ GRAPH_DEFAULT_STATE: ImportGraphState = {
 
     "item_name": "",
     "trace_id": "",
+    "unit_id": "",
 
 }
 

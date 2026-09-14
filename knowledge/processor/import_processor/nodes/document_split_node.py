@@ -32,7 +32,7 @@ class DocumentSplitNode(BaseNode):
         final_section = self._split_and_merge(sections, config.max_content_length, config.min_content_length)
 
         # 4. 组装成chunk对象
-        final_chunks = self._assemble_chunks(final_section)
+        final_chunks = self._assemble_chunks(final_section, state.get("unit_id") or "")
 
         # 5. 备份(观察)
         self._back_up(final_chunks, state)
@@ -292,7 +292,7 @@ List[Dict[str, Any]]:
         final_sections.append(current_section)
         return final_sections
 
-    def _assemble_chunks(self, final_sections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _assemble_chunks(self, final_sections: List[Dict[str, Any]], unit_id: str = "") -> List[Dict[str, Any]]:
         """
         组装最后的chunks
         Args:
@@ -314,7 +314,8 @@ List[Dict[str, Any]]:
                 "content": content,
                 "title": title,
                 "parent_title": parent_title,
-                "file_title": file_title
+                "file_title": file_title,
+                "unit_id": unit_id,
             })
         self.logger.info(f"最终切割后能够进入到嵌入节点的chunk个数:{len(final_chunks)}")
         return final_chunks
