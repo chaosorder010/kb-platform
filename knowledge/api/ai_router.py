@@ -49,6 +49,7 @@ class ChatHistoryResponse(BaseModel):
 
 @lru_cache
 def get_chat_service() -> ChatService:
+    from knowledge.api.settlement_router import get_settlement_service
     from knowledge.utils.client.storage_clients import StorageClients
 
     knowledge = get_knowledge_service()
@@ -58,9 +59,11 @@ def get_chat_service() -> ChatService:
     except Exception:
         logger.exception("Mongo qa access logs unavailable; falling back to memory")
         access_logs = MemoryQaAccessLogRepository()
+    settlement = get_settlement_service()
     return ChatService(
         knowledge_service=knowledge,
         access_logs=access_logs,
+        faq_matcher=settlement.match_cache,
     )
 
 

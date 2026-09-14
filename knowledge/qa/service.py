@@ -36,12 +36,14 @@ class ChatService:
         graph_runner: GraphRunner | None = None,
         history_getter: Callable[[str, int], list[dict[str, Any]]] | None = None,
         history_clearer: Callable[[str], int] | None = None,
+        faq_matcher: Callable[[str], dict[str, Any] | None] | None = None,
     ) -> None:
         self._knowledge = knowledge_service
         self._access_logs = access_logs or MemoryQaAccessLogRepository()
         self._graph_runner = graph_runner or self._default_graph_runner
         self._history_getter = history_getter or get_recent_messages
         self._history_clearer = history_clearer or clear_history
+        self._faq_matcher = faq_matcher
 
     @staticmethod
     def generate_session_id() -> str:
@@ -96,6 +98,54 @@ class ChatService:
             "completion_tokens": 0,
             "total_tokens": 0,
         }
+
+        faq_hit = self._faq_matcher(question) if self._faq_matcher else None
+        if faq_hit:
+            answer = str(faq_hit.get("answer") or "")
+            state["answer"] = answer
+            state["faq_id"] = faq_hit.get("id")
+            state["faq_cache_hit"] = True
+            related = list(faq_hit.get("related_unit_ids") or [])
+            if not related and faq_hit.get("related_unit_id"):
+                related = [str(faq_hit.get("related_unit_id"))]
+            state["authorized_unit_ids"] = [uid for uid in related if uid]
+            state["recalled_unit_ids"] = list(state["authorized_unit_ids"])
+            if is_stream:
+                push_sse_event(
+                    task_id=task_id,
+                    event=SSEEvent.DELTA,
+                    data={"content": answer},
+                )
+                push_sse_event(
+                    task_id=task_id,
+                    event=SSEEvent.FINAL,
+                    data={
+                        "answer": answer,
+                        "unauthorized_units": [],
+                        "authorized_unit_ids": state["authorized_unit_ids"],
+                        "unauthorized_unit_ids": [],
+                        "references": [
+                            {
+                                "unit_id": uid,
+                                "title": uid,
+                            }
+                            for uid in state["authorized_unit_ids"]
+                        ],
+                        "faq_cache_hit": True,
+                        "faq_id": faq_hit.get("id"),
+                        "match_score": faq_hit.get("match_score"),
+                    },
+                )
+            update_task_status(task_id=task_id, status_name=TASK_STATUS_COMPLETED)
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            self._write_access_log(
+                session_id=session_id,
+                user_id=user.id,
+                question=question,
+                state=state,
+                response_time_ms=elapsed_ms,
+            )
+            return state
 
         try:
             result = self._graph_runner(state) or state

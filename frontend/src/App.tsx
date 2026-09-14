@@ -9,6 +9,7 @@ import OrgPage from "./pages/Org";
 import ProfilePage from "./pages/Profile";
 import AiChatPage from "./pages/AiChat";
 import DashboardPage from "./pages/Dashboard";
+import SettlementPage from "./pages/Settlement";
 
 const { Header, Content } = Layout;
 
@@ -139,7 +140,7 @@ export default function App() {
             path="/settlement"
             element={
               <RequirePerm code="menu:settlement">
-                <Page title="知识沉淀" />
+                <SettlementPage />
               </RequirePerm>
             }
           />

@@ -10,6 +10,7 @@ def load_domain_routers() -> list[APIRouter]:
     from knowledge.api.knowledge_router import router as knowledge_router
     from knowledge.api.metrics_router import router as metrics_router
     from knowledge.api.org_router import router as org_router
+    from knowledge.api.settlement_router import router as settlement_router
 
     return [
         auth_router,
@@ -17,6 +18,7 @@ def load_domain_routers() -> list[APIRouter]:
         knowledge_router,
         ai_router,
         dashboard_router,
+        settlement_router,
         metrics_router,
     ]
 

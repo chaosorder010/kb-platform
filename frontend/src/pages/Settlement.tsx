@@ -1,0 +1,208 @@
+import {
+  Button,
+  Input,
+  Space,
+  Switch,
+  Table,
+  Tabs,
+  Typography,
+  message,
+} from "antd";
+import { useCallback, useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
+import { authFetch, getAccessToken, hasPermission } from "../auth";
+
+type FaqItem = {
+  id: string;
+  question: string;
+  answer: string;
+  hit_count: number;
+  related_unit_id?: string;
+  related_unit_ids?: string[];
+  status: string;
+  cache_enabled?: boolean;
+  sample_questions?: string[];
+};
+
+async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await authFetch(path, init);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error((body as { detail?: string }).detail || "请求失败");
+  }
+  return response.json() as Promise<T>;
+}
+
+export default function SettlementPage() {
+  const loggedIn = !!getAccessToken();
+  const canManage = hasPermission("settlement:manage");
+  const [recommendations, setRecommendations] = useState<FaqItem[]>([]);
+  const [published, setPublished] = useState<FaqItem[]>([]);
+  const [editing, setEditing] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [rec, pub] = await Promise.all([
+        apiJson<{ items: FaqItem[] }>(
+          "/api/settlement/faqs/recommendations?refresh=true",
+        ),
+        apiJson<{ items: FaqItem[] }>("/api/settlement/faqs?status=published"),
+      ]);
+      setRecommendations(rec.items || []);
+      setPublished(pub.items || []);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "加载失败");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (loggedIn && canManage) void reload();
+  }, [loggedIn, canManage, reload]);
+
+  if (!loggedIn) return <Navigate to="/login" replace />;
+  if (!canManage) return <Navigate to="/" replace />;
+
+  async function onReview(id: string, action: "approve" | "reject") {
+    try {
+      await apiJson(`/api/settlement/faqs/${id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          edited_answer: editing[id] || "",
+        }),
+      });
+      message.success(action === "approve" ? "已发布" : "已驳回");
+      await reload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "审核失败");
+    }
+  }
+
+  async function onToggleCache(id: string, enabled: boolean) {
+    try {
+      await apiJson(`/api/settlement/faqs/${id}/cache`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cache_enabled: enabled }),
+      });
+      message.success(enabled ? "缓存已开启" : "缓存已关闭");
+      await reload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "更新缓存失败");
+    }
+  }
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Typography.Title level={3} style={{ margin: 0 }}>
+        知识沉淀
+      </Typography.Title>
+      <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+        从问答日志挖掘高频相似问题，审核发布后进入 FAQ 缓存加速对话。
+      </Typography.Paragraph>
+      <Button onClick={() => void reload()} loading={loading}>
+        刷新挖掘
+      </Button>
+      <Tabs
+        items={[
+          {
+            key: "rec",
+            label: "FAQ 推荐审核",
+            children: (
+              <Table
+                rowKey="id"
+                loading={loading}
+                dataSource={recommendations}
+                pagination={false}
+                columns={[
+                  { title: "问题", dataIndex: "question" },
+                  {
+                    title: "频次",
+                    dataIndex: "hit_count",
+                    width: 80,
+                  },
+                  {
+                    title: "关联单元",
+                    render: (_, row) =>
+                      row.related_unit_id ||
+                      (row.related_unit_ids || []).join(", ") ||
+                      "-",
+                  },
+                  {
+                    title: "建议答案",
+                    render: (_, row) => (
+                      <Input.TextArea
+                        rows={2}
+                        value={editing[row.id] ?? row.answer}
+                        onChange={(e) =>
+                          setEditing((prev) => ({
+                            ...prev,
+                            [row.id]: e.target.value,
+                          }))
+                        }
+                      />
+                    ),
+                  },
+                  {
+                    title: "操作",
+                    width: 180,
+                    render: (_, row) => (
+                      <Space>
+                        <Button
+                          type="primary"
+                          onClick={() => void onReview(row.id, "approve")}
+                        >
+                          通过
+                        </Button>
+                        <Button
+                          danger
+                          onClick={() => void onReview(row.id, "reject")}
+                        >
+                          驳回
+                        </Button>
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
+            ),
+          },
+          {
+            key: "pub",
+            label: "已发布 FAQ 库",
+            children: (
+              <Table
+                rowKey="id"
+                loading={loading}
+                dataSource={published}
+                pagination={false}
+                columns={[
+                  { title: "问题", dataIndex: "question" },
+                  { title: "标准答案", dataIndex: "answer" },
+                  { title: "命中次数", dataIndex: "hit_count", width: 100 },
+                  {
+                    title: "缓存",
+                    width: 100,
+                    render: (_, row) => (
+                      <Switch
+                        checked={!!row.cache_enabled}
+                        onChange={(checked) =>
+                          void onToggleCache(row.id, checked)
+                        }
+                      />
+                    ),
+                  },
+                ]}
+              />
+            ),
+          },
+        ]}
+      />
+    </Space>
+  );
+}
