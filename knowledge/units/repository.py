@@ -12,6 +12,8 @@ class KnowledgeRepository(Protocol):
 
     def get_unit(self, unit_id: str) -> dict[str, Any] | None: ...
 
+    def delete_units(self, unit_ids: list[str]) -> int: ...
+
     def list_units(
         self,
         *,
@@ -33,12 +35,27 @@ class KnowledgeRepository(Protocol):
 
     def get_chunks(self, unit_id: str) -> list[dict[str, Any]]: ...
 
+    def save_version(self, version: dict[str, Any]) -> dict[str, Any]: ...
+
+    def list_versions(self, unit_id: str) -> list[dict[str, Any]]: ...
+
+    def save_attachment(self, attachment: dict[str, Any]) -> dict[str, Any]: ...
+
+    def list_attachments(self, unit_id: str) -> list[dict[str, Any]]: ...
+
+    def put_object(self, object_key: str, content: bytes) -> None: ...
+
+    def get_object(self, object_key: str) -> bytes | None: ...
+
 
 class MemoryKnowledgeRepository:
     def __init__(self) -> None:
         self._units: dict[str, dict[str, Any]] = {}
         self._tasks: dict[str, dict[str, Any]] = {}
         self._chunks: dict[str, list[dict[str, Any]]] = {}
+        self._versions: dict[str, list[dict[str, Any]]] = {}
+        self._attachments: dict[str, list[dict[str, Any]]] = {}
+        self._objects: dict[str, bytes] = {}
 
     def insert_unit(self, unit: dict[str, Any]) -> dict[str, Any]:
         stored = deepcopy(unit)
@@ -55,6 +72,17 @@ class MemoryKnowledgeRepository:
     def get_unit(self, unit_id: str) -> dict[str, Any] | None:
         unit = self._units.get(unit_id)
         return deepcopy(unit) if unit else None
+
+    def delete_units(self, unit_ids: list[str]) -> int:
+        deleted = 0
+        for unit_id in unit_ids:
+            if unit_id in self._units:
+                del self._units[unit_id]
+                self._versions.pop(unit_id, None)
+                self._attachments.pop(unit_id, None)
+                self._chunks.pop(unit_id, None)
+                deleted += 1
+        return deleted
 
     def list_units(
         self,
@@ -83,7 +111,7 @@ class MemoryKnowledgeRepository:
             items = [u for u in items if u.get("category") == category]
         if status:
             items = [u for u in items if u.get("status") == status]
-        items.sort(key=lambda u: u.get("created_at", ""), reverse=True)
+        items.sort(key=lambda u: u.get("created_at") or "", reverse=True)
         total = len(items)
         start = max(page - 1, 0) * page_size
         end = start + page_size
@@ -113,6 +141,35 @@ class MemoryKnowledgeRepository:
     def get_chunks(self, unit_id: str) -> list[dict[str, Any]]:
         return deepcopy(self._chunks.get(unit_id, []))
 
+    def save_version(self, version: dict[str, Any]) -> dict[str, Any]:
+        unit_id = version["unit_id"]
+        bucket = self._versions.setdefault(unit_id, [])
+        stored = deepcopy(version)
+        bucket.append(stored)
+        return deepcopy(stored)
+
+    def list_versions(self, unit_id: str) -> list[dict[str, Any]]:
+        items = self._versions.get(unit_id, [])
+        ordered = sorted(items, key=lambda v: v.get("version", 0), reverse=True)
+        return deepcopy(ordered)
+
+    def save_attachment(self, attachment: dict[str, Any]) -> dict[str, Any]:
+        unit_id = attachment["unit_id"]
+        bucket = self._attachments.setdefault(unit_id, [])
+        stored = deepcopy(attachment)
+        bucket.append(stored)
+        return deepcopy(stored)
+
+    def list_attachments(self, unit_id: str) -> list[dict[str, Any]]:
+        return deepcopy(self._attachments.get(unit_id, []))
+
+    def put_object(self, object_key: str, content: bytes) -> None:
+        self._objects[object_key] = content
+
+    def get_object(self, object_key: str) -> bytes | None:
+        data = self._objects.get(object_key)
+        return bytes(data) if data is not None else None
+
 
 class MongoKnowledgeRepository:
     def __init__(self, db) -> None:
@@ -128,6 +185,13 @@ class MongoKnowledgeRepository:
 
     def get_unit(self, unit_id: str) -> dict[str, Any] | None:
         return self._db.knowledge_units.find_one({"id": unit_id}, {"_id": 0})
+
+    def delete_units(self, unit_ids: list[str]) -> int:
+        result = self._db.knowledge_units.delete_many({"id": {"$in": unit_ids}})
+        self._db.knowledge_unit_versions.delete_many({"unit_id": {"$in": unit_ids}})
+        self._db.unit_attachments.delete_many({"unit_id": {"$in": unit_ids}})
+        self._db.unit_chunks.delete_many({"unit_id": {"$in": unit_ids}})
+        return int(result.deleted_count)
 
     def list_units(
         self,
@@ -187,3 +251,36 @@ class MongoKnowledgeRepository:
 
     def get_chunks(self, unit_id: str) -> list[dict[str, Any]]:
         return list(self._db.unit_chunks.find({"unit_id": unit_id}, {"_id": 0}))
+
+    def save_version(self, version: dict[str, Any]) -> dict[str, Any]:
+        self._db.knowledge_unit_versions.insert_one(deepcopy(version))
+        return deepcopy(version)
+
+    def list_versions(self, unit_id: str) -> list[dict[str, Any]]:
+        cursor = self._db.knowledge_unit_versions.find(
+            {"unit_id": unit_id}, {"_id": 0}
+        ).sort("version", -1)
+        return list(cursor)
+
+    def save_attachment(self, attachment: dict[str, Any]) -> dict[str, Any]:
+        self._db.unit_attachments.insert_one(deepcopy(attachment))
+        return deepcopy(attachment)
+
+    def list_attachments(self, unit_id: str) -> list[dict[str, Any]]:
+        return list(
+            self._db.unit_attachments.find({"unit_id": unit_id}, {"_id": 0})
+        )
+
+    def put_object(self, object_key: str, content: bytes) -> None:
+        self._db.unit_objects.update_one(
+            {"object_key": object_key},
+            {"$set": {"object_key": object_key, "content": content}},
+            upsert=True,
+        )
+
+    def get_object(self, object_key: str) -> bytes | None:
+        row = self._db.unit_objects.find_one({"object_key": object_key}, {"_id": 0})
+        if not row:
+            return None
+        content = row.get("content")
+        return bytes(content) if content is not None else None

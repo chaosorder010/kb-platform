@@ -4,6 +4,7 @@ import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { getAccessToken, getPermissions, hasPermission } from "./auth";
 import LoginPage from "./pages/Login";
 import KnowledgePage from "./pages/Knowledge";
+import KnowledgeEditPage from "./pages/KnowledgeEdit";
 import OrgPage from "./pages/Org";
 import ProfilePage from "./pages/Profile";
 
@@ -105,6 +106,14 @@ export default function App() {
             element={
               <RequirePerm code="menu:knowledge">
                 <KnowledgePage />
+              </RequirePerm>
+            }
+          />
+          <Route
+            path="/knowledge/:id"
+            element={
+              <RequirePerm code="menu:knowledge">
+                <KnowledgeEditPage />
               </RequirePerm>
             }
           />

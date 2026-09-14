@@ -1,7 +1,7 @@
-import { Alert, Button, Form, Input, Progress, Select, Space, Table, Upload, message } from "antd";
+import { Alert, Button, Form, Input, Modal, Progress, Select, Space, Table, Upload, message } from "antd";
 import type { UploadFile } from "antd/es/upload/interface";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState, type Key } from "react";
+import { Link, Navigate } from "react-router-dom";
 import { authFetch, getAccessToken, hasPermission } from "../auth";
 
 type ImportTask = {
@@ -39,6 +39,7 @@ const statusLabel: Record<string, string> = {
   published: "已发布",
   failed: "失败",
   draft: "草稿",
+  disabled: "已停用",
   pending: "排队中",
   completed: "已完成",
 };
@@ -83,6 +84,14 @@ export default function KnowledgePage() {
 
   const canView = hasPermission("knowledge:view") || hasPermission("menu:knowledge");
   const canCreate = hasPermission("knowledge:create");
+  const canUpdate = hasPermission("knowledge:update");
+  const canDelete = hasPermission("knowledge:delete");
+  const canPerm = hasPermission("knowledge:permission");
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
+  const [permTarget, setPermTarget] = useState<KnowledgeUnit | null>(null);
+  const [permOpen, setPermOpen] = useState(false);
+  const [permGlobal, setPermGlobal] = useState(false);
+  const [permSummaryDraft, setPermSummaryDraft] = useState("");
 
   const loadUnits = useCallback(async () => {
     const params = new URLSearchParams();
@@ -141,9 +150,67 @@ export default function KnowledgePage() {
         key: "status",
         render: (value: string) => statusLabel[value] || value,
       },
+      {
+        title: "操作",
+        key: "actions",
+        render: (_: unknown, row: KnowledgeUnit) => (
+          <Space>
+            {canUpdate || canView ? <Link to={`/knowledge/${row.id}`}>编辑</Link> : null}
+            {canPerm ? (
+              <Button
+                type="link"
+                style={{ padding: 0 }}
+                onClick={() => {
+                  setPermTarget(row);
+                  setPermGlobal(false);
+                  setPermSummaryDraft(row.permission_summary || "");
+                  setPermOpen(true);
+                }}
+              >
+                权限
+              </Button>
+            ) : null}
+          </Space>
+        ),
+      },
     ],
-    [],
+    [canUpdate, canView, canPerm],
   );
+
+  async function onBatchDelete() {
+    if (!selectedRowKeys.length) {
+      message.warning("请先选择要删除的知识单元");
+      return;
+    }
+    Modal.confirm({
+      title: `确认删除 ${selectedRowKeys.length} 个知识单元？`,
+      okType: "danger",
+      onOk: async () => {
+        await apiJson("/api/knowledge/units", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: selectedRowKeys }),
+        });
+        message.success("已批量删除");
+        setSelectedRowKeys([]);
+        await loadUnits();
+      },
+    });
+  }
+
+  async function saveQuickPermission() {
+    if (!permTarget) return;
+    const permissions = permGlobal
+      ? [{ type: "global", id: "*", name: "全局" }]
+      : [];
+    const updated = await apiJson(`/api/knowledge/units/${permTarget.id}/permissions`, {
+      method: "POST",
+      body: JSON.stringify({ permissions }),
+    });
+    message.success(`权限已更新：${updated.permission_summary}`);
+    setPermOpen(false);
+    setPermTarget(null);
+    await loadUnits();
+  }
 
   if (!getAccessToken()) {
     return <Navigate to="/login" replace />;
@@ -243,6 +310,11 @@ export default function KnowledgePage() {
       <div>
         <h2>知识单元列表</h2>
         <Space wrap style={{ marginBottom: 12 }}>
+          {canDelete ? (
+            <Button danger disabled={!selectedRowKeys.length} onClick={() => void onBatchDelete()}>
+              批量删除
+            </Button>
+          ) : null}
           <Input.Search
             placeholder="搜索标题/编号/文件名"
             allowClear
@@ -281,8 +353,38 @@ export default function KnowledgePage() {
           columns={columns}
           dataSource={units}
           pagination={{ total, pageSize: 20 }}
+          rowSelection={
+            canDelete
+              ? {
+                  selectedRowKeys,
+                  onChange: (keys) => setSelectedRowKeys(keys),
+                }
+              : undefined
+          }
         />
       </div>
+
+      <Modal
+        title={permTarget ? `配置权限 · ${permTarget.title}` : "配置权限"}
+        open={permOpen}
+        onCancel={() => setPermOpen(false)}
+        onOk={() => void saveQuickPermission()}
+      >
+        <Space direction="vertical">
+          <div>当前摘要：{permSummaryDraft || "无数据权限"}</div>
+          <label>
+            <input
+              type="checkbox"
+              checked={permGlobal}
+              onChange={(e) => setPermGlobal(e.target.checked)}
+            />{" "}
+            设为全局可见（完整混合权限请在编辑页配置）
+          </label>
+          <Link to={permTarget ? `/knowledge/${permTarget.id}` : "/knowledge"}>
+            打开编辑页权限弹窗
+          </Link>
+        </Space>
+      </Modal>
     </Space>
   );
 }

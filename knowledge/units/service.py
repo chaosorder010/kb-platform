@@ -76,6 +76,8 @@ class KnowledgeService:
             "updated_at": now,
             "data_permissions": [],
             "permission_summary": "无数据权限",
+            "tags": [],
+            "attachments": [],
             "raw_content": content,
         }
         return self._repo.insert_unit(unit)
@@ -148,12 +150,253 @@ class KnowledgeService:
         public_items = []
         for item in items:
             public_items.append(self._to_public_unit(item))
+
         return {
             "items": public_items,
             "total": total,
             "page": page,
             "page_size": page_size,
         }
+
+    def get_unit(self, unit_id: str) -> dict[str, Any] | None:
+        unit = self._repo.get_unit(unit_id)
+        if unit is None:
+            return None
+        public = self._to_public_unit(unit)
+        public["attachments"] = self._repo.list_attachments(unit_id)
+        return public
+
+    def update_unit(
+        self,
+        unit_id: str,
+        *,
+        editor_id: str,
+        editor_name: str = "",
+        title: str | None = None,
+        content: str | None = None,
+        tags: list[str] | None = None,
+        status: str | None = None,
+        category: str | None = None,
+        summary: str | None = None,
+    ) -> dict[str, Any]:
+        unit = self._repo.get_unit(unit_id)
+        if unit is None:
+            raise LookupError("知识单元不存在")
+
+        current_status = unit.get("status") or "draft"
+        next_status = status if status is not None else current_status
+        if status is not None and not self._can_transition(current_status, next_status):
+            raise ValueError(f"不允许从 {current_status} 转换到 {next_status}")
+
+        patch: dict[str, Any] = {"updated_at": utc_now_iso()}
+        if title is not None:
+            patch["title"] = title
+        if content is not None:
+            patch["content"] = content
+        if tags is not None:
+            patch["tags"] = list(tags)
+        if status is not None:
+            patch["status"] = next_status
+        if category is not None:
+            patch["category"] = category
+        if summary is not None:
+            patch["summary"] = summary
+
+        updated = self._repo.update_unit(unit_id, patch)
+        if updated is None:
+            raise LookupError("知识单元不存在")
+
+        versions = self._repo.list_versions(unit_id)
+        version_no = (versions[0]["version"] + 1) if versions else 1
+        self._repo.save_version(
+            {
+                "id": f"ver-{uuid.uuid4().hex[:12]}",
+                "unit_id": unit_id,
+                "version": version_no,
+                "title": updated.get("title") or "",
+                "content": updated.get("content") or "",
+                "tags": list(updated.get("tags") or []),
+                "status": updated.get("status") or "",
+                "editor_id": editor_id,
+                "editor_name": editor_name,
+                "created_at": utc_now_iso(),
+            }
+        )
+        public = self._to_public_unit(updated)
+        public["attachments"] = self._repo.list_attachments(unit_id)
+        return public
+
+    def list_versions(self, unit_id: str) -> list[dict[str, Any]]:
+        if self._repo.get_unit(unit_id) is None:
+            raise LookupError("知识单元不存在")
+        return self._repo.list_versions(unit_id)
+
+    def add_attachment(
+        self,
+        unit_id: str,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str = "",
+        uploaded_by: str = "",
+    ) -> dict[str, Any]:
+        if self._repo.get_unit(unit_id) is None:
+            raise LookupError("知识单元不存在")
+        attachment_id = f"att-{uuid.uuid4().hex[:12]}"
+        object_key = f"attachments/{unit_id}/{attachment_id}/{filename}"
+        self._repo.put_object(object_key, content)
+        attachment = {
+            "id": attachment_id,
+            "unit_id": unit_id,
+            "filename": filename,
+            "object_key": object_key,
+            "size": len(content),
+            "content_type": content_type,
+            "uploaded_by": uploaded_by,
+            "uploaded_at": utc_now_iso(),
+        }
+        saved = self._repo.save_attachment(attachment)
+        attachments = self._repo.list_attachments(unit_id)
+        self._repo.update_unit(
+            unit_id,
+            {"attachments": attachments, "updated_at": utc_now_iso()},
+        )
+        return {
+            "id": saved["id"],
+            "filename": saved["filename"],
+            "object_key": saved["object_key"],
+            "size": saved["size"],
+            "content_type": saved.get("content_type") or "",
+            "uploaded_by": saved.get("uploaded_by") or "",
+            "uploaded_at": saved.get("uploaded_at") or "",
+        }
+
+    def set_permissions(
+        self,
+        unit_id: str,
+        permissions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if self._repo.get_unit(unit_id) is None:
+            raise LookupError("知识单元不存在")
+        normalized: list[dict[str, Any]] = []
+        for item in permissions:
+            ptype = item.get("type")
+            if ptype not in {"global", "department", "role", "user"}:
+                raise ValueError(f"不支持的权限类型: {ptype}")
+            pid = item.get("id") or ("*" if ptype == "global" else "")
+            if ptype != "global" and not pid:
+                raise ValueError("权限目标 id 不能为空")
+            normalized.append(
+                {
+                    "type": ptype,
+                    "id": pid if ptype != "global" else "*",
+                    "name": item.get("name") or "",
+                }
+            )
+        summary = self._permission_summary(normalized)
+        updated = self._repo.update_unit(
+            unit_id,
+            {
+                "data_permissions": normalized,
+                "permission_summary": summary,
+                "updated_at": utc_now_iso(),
+            },
+        )
+        if updated is None:
+            raise LookupError("知识单元不存在")
+        public = self._to_public_unit(updated)
+        public["attachments"] = self._repo.list_attachments(unit_id)
+        return public
+
+    def check_permissions(
+        self,
+        *,
+        unit_ids: list[str],
+        user_id: str,
+        department_id: str = "",
+        role_ids: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        role_ids = role_ids or []
+        results: list[dict[str, Any]] = []
+        for unit_id in unit_ids:
+            unit = self._repo.get_unit(unit_id)
+            if unit is None:
+                results.append({"unit_id": unit_id, "authorized": False})
+                continue
+            perms = unit.get("data_permissions") or []
+            results.append(
+                {
+                    "unit_id": unit_id,
+                    "authorized": self._is_authorized(
+                        perms,
+                        user_id=user_id,
+                        department_id=department_id,
+                        role_ids=role_ids,
+                    ),
+                }
+            )
+        return results
+
+    def delete_units(self, unit_ids: list[str]) -> int:
+        if not unit_ids:
+            return 0
+        return self._repo.delete_units(unit_ids)
+
+    @staticmethod
+    def _can_transition(current: str, target: str) -> bool:
+        if current == target:
+            return True
+        allowed = {
+            "draft": {"published", "disabled"},
+            "published": {"draft", "disabled"},
+            "disabled": {"draft", "published"},
+            "failed": {"draft"},
+            "processing": set(),
+            "pending": set(),
+            "completed": {"draft", "published", "disabled"},
+        }
+        return target in allowed.get(current, set())
+
+    @staticmethod
+    def _permission_summary(permissions: list[dict[str, Any]]) -> str:
+        if not permissions:
+            return "无数据权限"
+        labels: list[str] = []
+        for item in permissions:
+            ptype = item.get("type")
+            name = item.get("name") or item.get("id") or ""
+            if ptype == "global":
+                labels.append("全局")
+            elif ptype == "department":
+                labels.append(f"部门:{name}")
+            elif ptype == "role":
+                labels.append(f"角色:{name}")
+            elif ptype == "user":
+                labels.append(f"用户:{name}")
+        return " / ".join(labels) if labels else "已配置权限"
+
+    @staticmethod
+    def _is_authorized(
+        permissions: list[dict[str, Any]],
+        *,
+        user_id: str,
+        department_id: str,
+        role_ids: list[str],
+    ) -> bool:
+        if not permissions:
+            return False
+        for item in permissions:
+            ptype = item.get("type")
+            pid = item.get("id")
+            if ptype == "global":
+                return True
+            if ptype == "user" and pid == user_id:
+                return True
+            if ptype == "department" and pid and pid == department_id:
+                return True
+            if ptype == "role" and pid in role_ids:
+                return True
+        return False
 
     def run_import_task_sync(self, task_id: str) -> list[dict[str, Any]]:
         task = self._repo.get_task(task_id)
@@ -247,6 +490,9 @@ class KnowledgeService:
 
     def _to_public_unit(self, item: dict[str, Any]) -> dict[str, Any]:
         perms = item.get("data_permissions") or []
+        attachments = item.get("attachments")
+        if attachments is None:
+            attachments = self._repo.list_attachments(item["id"])
         return {
             "id": item["id"],
             "unit_code": item["unit_code"],
@@ -265,6 +511,8 @@ class KnowledgeService:
             "summary": item.get("summary") or "",
             "content": item.get("content") or "",
             "file_size": item.get("file_size") or 0,
+            "tags": list(item.get("tags") or []),
+            "attachments": list(attachments or []),
         }
 
     def _extract_text(self, filename: str, content: bytes) -> str:
