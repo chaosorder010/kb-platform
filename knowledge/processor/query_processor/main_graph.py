@@ -15,6 +15,8 @@ from knowledge.processor.query_processor.nodes.web_mcp_search_node import WebMcp
 from knowledge.processor.query_processor.nodes.rrf_merge_node import RrfMergeNode
 from knowledge.processor.query_processor.nodes.reranker_node import RerankerNode
 from knowledge.processor.query_processor.nodes.answer_output_node import AnswerOutPutNode
+from knowledge.processor.query_processor.nodes.authz_filter_node import AuthzFilterNode
+
 
 # 加载环境变量
 load_dotenv()
@@ -90,6 +92,7 @@ def create_query_graph() -> CompiledStateGraph:
         "join": lambda x: print(f"[join] Ternary search completed, state keys: {list(x.keys())} ") or {},  # 多路搜索汇合（虚节点）
         "rrf_merge_node": RrfMergeNode(),
         "reranker_node": RerankerNode(),
+        "authz_filter_node": AuthzFilterNode(),
         "answer_output_node": AnswerOutPutNode(),
     }
 
@@ -126,7 +129,8 @@ def create_query_graph() -> CompiledStateGraph:
     # 8. 顺序边
     workflow.add_edge("join", "rrf_merge_node")
     workflow.add_edge("rrf_merge_node", "reranker_node")
-    workflow.add_edge("reranker_node", "answer_output_node")
+    workflow.add_edge("reranker_node", "authz_filter_node")
+    workflow.add_edge("authz_filter_node", "answer_output_node")
     workflow.add_edge("answer_output_node", END)
 
     # 9. 返回可运行的状态

@@ -78,9 +78,16 @@ class RerankerNode(BaseNode):
 
             # 2.3 获取chunk中的chunk_id(一定有)
             chunk_id = chunk.get('chunk_id')
+            unit_id = chunk.get('unit_id') or ""
 
             # 3. 格式化文档(格式化本地)
-            formated_local_doc = self._format_doc(content=content, chunk_id=chunk_id, title=title, source="local")
+            formated_local_doc = self._format_doc(
+                content=content,
+                chunk_id=chunk_id,
+                title=title,
+                source="local",
+                unit_id=unit_id,
+            )
 
             final_docs.append(formated_local_doc)
 
@@ -106,7 +113,7 @@ class RerankerNode(BaseNode):
         self.logger.info(f"获取Reranker阶段需要的搜索结果个数{len(final_docs)}")
         return final_docs
 
-    def _format_doc(self, content: str, chunk_id: int = None, title: str = "", url: str = "", source: str = ""):
+    def _format_doc(self, content: str, chunk_id: int = None, title: str = "", url: str = "", source: str = "", unit_id: str = ""):
         """
         格式化本地以及远程检索到的文档
         Args:
@@ -115,6 +122,7 @@ class RerankerNode(BaseNode):
             title:
             source:
             url:
+            unit_id:
 
         Returns:
 
@@ -124,7 +132,8 @@ class RerankerNode(BaseNode):
             "chunk_id": chunk_id,
             "title": title,
             "url": url,
-            "source": source
+            "source": source,
+            "unit_id": unit_id,
         }
 
     def _refine_rank(self, user_query: str, rerank_outputs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

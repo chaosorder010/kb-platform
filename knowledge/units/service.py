@@ -165,6 +165,9 @@ class KnowledgeService:
         public["attachments"] = self._repo.list_attachments(unit_id)
         return public
 
+    def insert_unit(self, unit: dict[str, Any]) -> dict[str, Any]:
+        return self._repo.insert_unit(unit)
+
     def update_unit(
         self,
         unit_id: str,

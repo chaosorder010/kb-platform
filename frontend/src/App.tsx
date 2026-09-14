@@ -7,6 +7,7 @@ import KnowledgePage from "./pages/Knowledge";
 import KnowledgeEditPage from "./pages/KnowledgeEdit";
 import OrgPage from "./pages/Org";
 import ProfilePage from "./pages/Profile";
+import AiChatPage from "./pages/AiChat";
 
 const { Header, Content } = Layout;
 
@@ -121,7 +122,7 @@ export default function App() {
             path="/ai"
             element={
               <RequirePerm code="menu:ai">
-                <Page title="AI 对话台" />
+                <AiChatPage />
               </RequirePerm>
             }
           />

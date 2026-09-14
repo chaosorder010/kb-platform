@@ -36,32 +36,62 @@ class AnswerOutPutNode(BaseNode):
         # 2. 获取任务id
         task_id = state.get('task_id')
 
-        # 3. 判断state中是否有answer
-        if state.get('answer'):
-            # 将答案推送出去
-            self._push_exist_answer(task_id, is_stream, state)
-            is_streamed = False
-        else:
-            # 3.2 组装提示词
-            prompt = self._build_prompt(state)
-            state['prompt'] = prompt  # 方便调试的时候看最终的提示词长什么样
+        # 鉴权后无可用上下文且存在权限缺失：明确提示，避免空上下文胡答
+        if (
+            not state.get("answer")
+            and not (state.get("reranked_docs") or [])
+            and (state.get("unauthorized_units") or [])
+        ):
+            state["answer"] = "当前召回内容均无访问权限，无法基于知识库作答。"
 
-            # 3.3 调用LLM(流式调用和非流式)
+        # 3. 判断state中是否有answer
+        if state.get("answer"):
+            self._push_exist_answer(task_id, is_stream, state)
+        else:
+            prompt = self._build_prompt(state)
+            state["prompt"] = prompt
             self._generate_answer(prompt, task_id, state)
-            is_streamed = is_stream
 
         # 4. 保存历史对话
-        # 4.1 只要你问了问题 有答案(LLM生成 你生成)
         self.save_history(state)
+
+        # 4.2 推送权限缺失卡片（独立于答案引用区）
+        unauthorized_units = state.get("unauthorized_units") or []
+        if is_stream and unauthorized_units:
+            push_sse_event(
+                task_id=task_id,
+                event=SSEEvent.PERMISSION_MISSING,
+                data={"cards": unauthorized_units},
+            )
+
+        final_payload = {
+            "answer": state.get("answer") or "",
+            "unauthorized_units": unauthorized_units,
+            "authorized_unit_ids": state.get("authorized_unit_ids") or [],
+            "unauthorized_unit_ids": state.get("unauthorized_unit_ids") or [],
+            "references": [
+                {
+                    "unit_id": doc.get("unit_id") or "",
+                    "title": doc.get("title") or "",
+                }
+                for doc in (state.get("reranked_docs") or [])
+                if doc.get("unit_id")
+            ],
+        }
+
+        # 粗略 Token 统计（看板后续可替换为真实 usage）
+        prompt_text = state.get("prompt") or ""
+        answer_text = state.get("answer") or ""
+        if not state.get("total_tokens"):
+            prompt_tokens = max(1, len(prompt_text) // 2)
+            completion_tokens = max(1, len(answer_text) // 2) if answer_text else 0
+            state["prompt_tokens"] = prompt_tokens
+            state["completion_tokens"] = completion_tokens
+            state["total_tokens"] = prompt_tokens + completion_tokens
 
         # 5. 关闭sse通道(修改事件类型为FINAL)
         if is_stream:
-            # 5.1 已经流过（LLM生成的答案）
-            if is_streamed:
-                push_sse_event(task_id=task_id, event=SSEEvent.FINAL, data={})
-            # 5.2 没有流过(自己生成的答案)
-            else:
-                push_sse_event(task_id=task_id, event=SSEEvent.FINAL, data={"answer": state.get('answer')})
+            push_sse_event(task_id=task_id, event=SSEEvent.FINAL, data=final_payload)
 
         # 6. 返回
         return state
@@ -80,9 +110,18 @@ class AnswerOutPutNode(BaseNode):
 
         """
 
-        # 1. 判断是非流式【普通的任务队列：任务结果队列_tasks_result】
         if not is_stream:
-            set_task_result(task_id=task_id, key="answer", value=state.get('answer'))  # 在该处放
+            set_task_result(task_id=task_id, key="answer", value=state.get("answer"))
+            return
+
+        # 流式：预置答案以 DELTA 推出；FINAL 统一由 process 尾部发出（含权限卡片/引用）
+        answer = state.get("answer") or ""
+        if answer:
+            push_sse_event(
+                task_id=task_id,
+                event=SSEEvent.DELTA,
+                data={"content": answer},
+            )
 
     def _build_prompt(self, state: QueryGraphState) -> str:
 
@@ -329,16 +368,19 @@ class AnswerOutPutNode(BaseNode):
                 text=user_query,
                 rewritten_query=rewritten_query,
                 item_names=item_names,
-                image_url=state.get('image_url', '')
+                image_url=state.get('image_url', ''),
+                user_id=state.get('user_id', '') or '',
             )
 
             # 5.2 保存AI角色的消息
-            save_chat_message(session_id=session_id,
-                              role="assistant",
-                              text=state.get('answer'),
-                              rewritten_query=rewritten_query,
-                              item_names=item_names
-                              )
+            save_chat_message(
+                session_id=session_id,
+                role="assistant",
+                text=state.get('answer'),
+                rewritten_query=rewritten_query,
+                item_names=item_names,
+                user_id=state.get('user_id', '') or '',
+            )
         except Exception as e:
             self.logger.error(f"保存历史对话到MongDB中失败 原因:{str(e)}")
 

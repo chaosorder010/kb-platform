@@ -10,6 +10,7 @@ class SSEEvent:
     PROGRESS = "progress"  # 任务节点进度
     DELTA = "delta"  # LLM 流式输出增量
     FINAL = "final"  # 最终完整答案
+    PERMISSION_MISSING = "permission_missing"  # 无权限知识单元卡片
 
 
 # 全局 SSE 任务队列存储
@@ -96,6 +97,8 @@ async def sse_generator(task_id: str, request: Request) -> AsyncGenerator:
                 event_data = msg.get('data')
                 # 3.5 打包返回
                 yield _sse_pack(event_type, event_data)  # 打包并且通过yield返回
+                if event_type == SSEEvent.FINAL:
+                    return
             except queue.Empty:
                 logging.info(f"队列为空...请稍等")
                 continue

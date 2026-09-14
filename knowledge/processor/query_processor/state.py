@@ -33,6 +33,18 @@ class QueryGraphState(TypedDict):
     image_mime: str  # 图片 MIME 类型，如 image/jpeg
     image_url: str  # 用户图片上传到 MinIO 后的访问 URL
     image_description: str  # VLM 生成的图片描述
+    user_id: str  # 当前用户 ID（鉴权问答）
+    department_id: str  # 用户部门
+    role_ids: list  # 用户角色 ID 列表
+    permission_checker: object  # 可调用：unit_ids -> check results
+    recalled_unit_ids: list  # 召回知识单元
+    authorized_unit_ids: list  # 授权单元
+    unauthorized_unit_ids: list  # 未授权单元
+    unauthorized_units: list  # 权限缺失卡片载荷
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
 
 
 # ==================== 默认状态 ====================
@@ -58,6 +70,17 @@ DEFAULT_STATE: QueryGraphState = {
     "image_mime": "",               # 图片 MIME 类型
     "image_url": "",                # 用户图片 MinIO URL
     "image_description": "",        # VLM 图片描述
+    "user_id": "",
+    "department_id": "",
+    "role_ids": [],
+    "permission_checker": None,
+    "recalled_unit_ids": [],
+    "authorized_unit_ids": [],
+    "unauthorized_unit_ids": [],
+    "unauthorized_units": [],
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0,
 }
 
 def create_default_state(**overrides) -> QueryGraphState:

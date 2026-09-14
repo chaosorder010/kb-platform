@@ -4,12 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 def load_domain_routers() -> list[APIRouter]:
+    from knowledge.api.ai_router import router as ai_router
     from knowledge.api.auth_router import router as auth_router
     from knowledge.api.knowledge_router import router as knowledge_router
     from knowledge.api.metrics_router import router as metrics_router
     from knowledge.api.org_router import router as org_router
 
-    return [auth_router, org_router, knowledge_router, metrics_router]
+    return [auth_router, org_router, knowledge_router, ai_router, metrics_router]
 
 
 def create_app() -> FastAPI:
@@ -21,6 +22,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
     api = APIRouter(prefix="/api")
 
     @api.get("/health")
