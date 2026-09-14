@@ -8,6 +8,7 @@ import KnowledgeEditPage from "./pages/KnowledgeEdit";
 import OrgPage from "./pages/Org";
 import ProfilePage from "./pages/Profile";
 import AiChatPage from "./pages/AiChat";
+import DashboardPage from "./pages/Dashboard";
 
 const { Header, Content } = Layout;
 
@@ -130,7 +131,7 @@ export default function App() {
             path="/dashboard"
             element={
               <RequirePerm code="menu:dashboard">
-                <Page title="业务看板" />
+                <DashboardPage />
               </RequirePerm>
             }
           />
