@@ -24,6 +24,16 @@ type FaqItem = {
   sample_questions?: string[];
 };
 
+type GapItem = {
+  id: string;
+  question_pattern: string;
+  sample_questions?: string[];
+  ask_count: number;
+  last_asked_at?: string;
+  status: string;
+  resolved_unit_id?: string;
+};
+
 async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await authFetch(path, init);
   if (!response.ok) {
@@ -38,20 +48,25 @@ export default function SettlementPage() {
   const canManage = hasPermission("settlement:manage");
   const [recommendations, setRecommendations] = useState<FaqItem[]>([]);
   const [published, setPublished] = useState<FaqItem[]>([]);
+  const [gaps, setGaps] = useState<GapItem[]>([]);
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [rec, pub] = await Promise.all([
+      const [rec, pub, gapResp] = await Promise.all([
         apiJson<{ items: FaqItem[] }>(
           "/api/settlement/faqs/recommendations?refresh=true",
         ),
         apiJson<{ items: FaqItem[] }>("/api/settlement/faqs?status=published"),
+        apiJson<{ items: GapItem[] }>(
+          "/api/settlement/knowledge-gaps?refresh=true",
+        ),
       ]);
       setRecommendations(rec.items || []);
       setPublished(pub.items || []);
+      setGaps(gapResp.items || []);
     } catch (err) {
       message.error(err instanceof Error ? err.message : "加载失败");
     } finally {
@@ -97,14 +112,41 @@ export default function SettlementPage() {
     }
   }
 
+  async function onCreateUnit(id: string) {
+    try {
+      const result = await apiJson<{
+        unit: { id: string; title: string };
+      }>(`/api/settlement/knowledge-gaps/${id}/create-unit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      message.success(`已创建知识单元 ${result.unit.title || result.unit.id}`);
+      await reload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "建档失败");
+    }
+  }
+
+  async function onGapStatus(id: string, statusValue: string) {
+    try {
+      await apiJson(`/api/settlement/knowledge-gaps/${id}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: statusValue }),
+      });
+      message.success("状态已更新");
+      await reload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "更新失败");
+    }
+  }
+
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={3} style={{ margin: 0 }}>
         知识沉淀
       </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-        从问答日志挖掘高频相似问题，审核发布后进入 FAQ 缓存加速对话。
-      </Typography.Paragraph>
       <Button onClick={() => void reload()} loading={loading}>
         刷新挖掘
       </Button>
@@ -121,11 +163,7 @@ export default function SettlementPage() {
                 pagination={false}
                 columns={[
                   { title: "问题", dataIndex: "question" },
-                  {
-                    title: "频次",
-                    dataIndex: "hit_count",
-                    width: 80,
-                  },
+                  { title: "频次", dataIndex: "hit_count", width: 80 },
                   {
                     title: "关联单元",
                     render: (_, row) =>
@@ -164,6 +202,73 @@ export default function SettlementPage() {
                           onClick={() => void onReview(row.id, "reject")}
                         >
                           驳回
+                        </Button>
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
+            ),
+          },
+          {
+            key: "gaps",
+            label: "知识缺口",
+            children: (
+              <Table
+                rowKey="id"
+                loading={loading}
+                dataSource={gaps}
+                pagination={false}
+                columns={[
+                  { title: "模式", dataIndex: "question_pattern" },
+                  {
+                    title: "样例",
+                    render: (_, row) =>
+                      (row.sample_questions || []).slice(0, 3).join("；") ||
+                      "-",
+                  },
+                  { title: "频次", dataIndex: "ask_count", width: 80 },
+                  {
+                    title: "最近提问",
+                    dataIndex: "last_asked_at",
+                    width: 200,
+                  },
+                  { title: "状态", dataIndex: "status", width: 110 },
+                  {
+                    title: "关联单元",
+                    dataIndex: "resolved_unit_id",
+                    width: 140,
+                    render: (v) => v || "-",
+                  },
+                  {
+                    title: "操作",
+                    width: 320,
+                    render: (_, row) => (
+                      <Space wrap>
+                        <Button
+                          type="primary"
+                          disabled={row.status === "resolved"}
+                          onClick={() => void onCreateUnit(row.id)}
+                        >
+                          一键建档
+                        </Button>
+                        <Button
+                          onClick={() => void onGapStatus(row.id, "resolved")}
+                          disabled={row.status === "resolved"}
+                        >
+                          已解决
+                        </Button>
+                        <Button
+                          onClick={() => void onGapStatus(row.id, "ignored")}
+                        >
+                          忽略
+                        </Button>
+                        <Button
+                          onClick={() =>
+                            void onGapStatus(row.id, "unresolved")
+                          }
+                        >
+                          重开
                         </Button>
                       </Space>
                     ),

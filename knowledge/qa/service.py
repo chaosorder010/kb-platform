@@ -217,6 +217,11 @@ class ChatService:
         state: dict[str, Any],
         response_time_ms: int,
     ) -> None:
+        scores = [
+            float(doc["score"])
+            for doc in (state.get("reranked_docs") or [])
+            if doc.get("score") is not None
+        ]
         entry = build_access_log_entry(
             session_id=session_id,
             user_id=user_id,
@@ -229,6 +234,8 @@ class ChatService:
             completion_tokens=int(state.get("completion_tokens") or 0),
             total_tokens=int(state.get("total_tokens") or 0),
             response_time_ms=response_time_ms,
+            faq_cache_hit=bool(state.get("faq_cache_hit")),
+            max_recall_score=max(scores) if scores else None,
         )
         self._access_logs.insert(entry)
 

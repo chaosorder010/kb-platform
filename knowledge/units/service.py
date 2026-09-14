@@ -168,6 +168,43 @@ class KnowledgeService:
     def insert_unit(self, unit: dict[str, Any]) -> dict[str, Any]:
         return self._repo.insert_unit(unit)
 
+    def create_draft_unit(
+        self,
+        *,
+        title: str,
+        content: str,
+        creator_id: str,
+        creator_name: str,
+        category: str = "",
+        tags: list[str] | None = None,
+        summary: str = "",
+    ) -> dict[str, Any]:
+        now = utc_now_iso()
+        self._code_seq += 1
+        unit_id = f"ku-{uuid.uuid4().hex[:12]}"
+        unit = {
+            "id": unit_id,
+            "unit_code": f"KU-{now[:10].replace('-', '')}-{self._code_seq:04d}",
+            "title": title,
+            "content": content,
+            "summary": summary,
+            "category": category,
+            "source_file_name": f"{title}.md",
+            "file_type": "md",
+            "file_size": len(content.encode("utf-8")),
+            "status": "draft",
+            "creator_id": creator_id,
+            "creator_name": creator_name,
+            "created_at": now,
+            "updated_at": now,
+            "data_permissions": [],
+            "permission_summary": "无数据权限",
+            "tags": list(tags or []),
+            "attachments": [],
+        }
+        inserted = self._repo.insert_unit(unit)
+        return self._to_public_unit(inserted)
+
     def update_unit(
         self,
         unit_id: str,

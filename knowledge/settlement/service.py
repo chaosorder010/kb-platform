@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import hashlib
-from collections import defaultdict
-from typing import Any, Callable
+from typing import Any
 
 from knowledge.qa.access_logs import MemoryQaAccessLogRepository, QaAccessLogRepository
+from knowledge.settlement.clustering import cluster_indices
 from knowledge.settlement.embeddings import TextEmbedder, HashingEmbedder, cosine, get_default_embedder
 from knowledge.settlement.faqs import FaqRepository, MemoryFaqRepository
+from knowledge.settlement.gaps import GapRepository, MemoryGapRepository
 from knowledge.units.schemas import utc_now_iso
+from knowledge.units.service import KnowledgeService
 
 DEFAULT_MINE_THRESHOLD = 0.82
 DEFAULT_CACHE_THRESHOLD = 0.88
+DEFAULT_GAP_RECALL_THRESHOLD = 0.45
 DEFAULT_MIN_CLUSTER_SIZE = 2
 
 
@@ -18,17 +21,23 @@ class SettlementService:
     def __init__(
         self,
         faqs: FaqRepository | None = None,
+        gaps: GapRepository | None = None,
         access_logs: QaAccessLogRepository | None = None,
         embedder: TextEmbedder | None = None,
+        knowledge_service: KnowledgeService | None = None,
         mine_threshold: float = DEFAULT_MINE_THRESHOLD,
         cache_threshold: float = DEFAULT_CACHE_THRESHOLD,
+        gap_recall_threshold: float = DEFAULT_GAP_RECALL_THRESHOLD,
         min_cluster_size: int = DEFAULT_MIN_CLUSTER_SIZE,
     ) -> None:
         self._faqs = faqs or MemoryFaqRepository()
+        self._gaps = gaps or MemoryGapRepository()
         self._logs = access_logs or MemoryQaAccessLogRepository()
         self._embedder = embedder or get_default_embedder()
+        self._knowledge = knowledge_service
         self._mine_threshold = mine_threshold
         self._cache_threshold = cache_threshold
+        self._gap_recall_threshold = gap_recall_threshold
         self._min_cluster_size = min_cluster_size
 
     def mine_recommendations(self) -> list[dict[str, Any]]:
@@ -51,27 +60,7 @@ class SettlementService:
             return self.list_recommendations()
 
         vectors = self._embedder.embed(questions)
-        parent = list(range(len(questions)))
-
-        def find(i: int) -> int:
-            while parent[i] != i:
-                parent[i] = parent[parent[i]]
-                i = parent[i]
-            return i
-
-        def union(i: int, j: int) -> None:
-            ri, rj = find(i), find(j)
-            if ri != rj:
-                parent[rj] = ri
-
-        for i in range(len(vectors)):
-            for j in range(i + 1, len(vectors)):
-                if cosine(vectors[i], vectors[j]) >= self._mine_threshold:
-                    union(i, j)
-
-        clusters: dict[int, list[int]] = defaultdict(list)
-        for idx in range(len(questions)):
-            clusters[find(idx)].append(idx)
+        clusters = cluster_indices(vectors, self._mine_threshold, cosine)
 
         for members in clusters.values():
             if len(members) < self._min_cluster_size:
@@ -201,3 +190,121 @@ class SettlementService:
         matched = dict(matched)
         matched["match_score"] = round(best_score, 4)
         return matched
+
+
+    def _is_gap_entry(self, entry: dict[str, Any]) -> bool:
+        if entry.get("faq_cache_hit"):
+            return False
+        if list(entry.get("authorized_unit_ids") or []):
+            return False
+        recalled = list(entry.get("recalled_unit_ids") or [])
+        max_score = entry.get("max_recall_score")
+        if max_score is not None:
+            return float(max_score) < self._gap_recall_threshold
+        return not recalled
+
+    def mine_knowledge_gaps(self) -> list[dict[str, Any]]:
+        entries = [e for e in self._logs.list_all() if self._is_gap_entry(e)]
+        questions: list[str] = []
+        meta: list[dict[str, Any]] = []
+        for entry in entries:
+            question = str(entry.get("question") or "").strip()
+            if not question:
+                continue
+            questions.append(question)
+            meta.append(
+                {
+                    "question": question,
+                    "created_at": entry.get("created_at") or utc_now_iso(),
+                }
+            )
+        if not questions:
+            return self.list_knowledge_gaps()
+
+        vectors = self._embedder.embed(questions)
+        clusters = cluster_indices(vectors, self._mine_threshold, cosine)
+
+        for members in clusters.values():
+            member_meta = [meta[i] for i in members]
+            samples = []
+            for item in member_meta:
+                if item["question"] not in samples:
+                    samples.append(item["question"])
+            pattern = max(samples, key=len)
+            digest = hashlib.sha1(pattern.encode("utf-8")).hexdigest()[:12]
+            gap_id = f"gap-auto-{digest}"
+            existing = self._gaps.get(gap_id)
+            if existing and existing.get("status") in {"resolved", "ignored"}:
+                continue
+            last_asked = max(item["created_at"] for item in member_meta)
+            payload = {
+                "id": gap_id,
+                "question_pattern": pattern,
+                "sample_questions": samples,
+                "ask_count": len(members),
+                "last_asked_at": last_asked,
+                "status": (existing or {}).get("status") or "unresolved",
+                "resolved_unit_id": (existing or {}).get("resolved_unit_id") or "",
+                "embedding": vectors[members[0]],
+            }
+            self._gaps.upsert(payload)
+
+        return self.list_knowledge_gaps()
+
+    def list_knowledge_gaps(self, status: str | None = None) -> list[dict[str, Any]]:
+        return self._gaps.list(status=status)
+
+    def update_gap_status(self, gap_id: str, status_value: str) -> dict[str, Any]:
+        if status_value not in {"unresolved", "resolved", "ignored"}:
+            raise ValueError("status 必须是 unresolved / resolved / ignored")
+        updated = self._gaps.update(gap_id, {"status": status_value})
+        if updated is None:
+            raise KeyError(gap_id)
+        return updated
+
+    def create_unit_from_gap(
+        self,
+        gap_id: str,
+        *,
+        creator_id: str,
+        creator_name: str,
+        title: str = "",
+        content: str = "",
+    ) -> dict[str, Any]:
+        gap = self._gaps.get(gap_id)
+        if gap is None:
+            raise KeyError(gap_id)
+        if self._knowledge is None:
+            raise RuntimeError("未配置知识服务，无法建档")
+        samples = list(gap.get("sample_questions") or [])
+        unit_title = title.strip() or str(
+            gap.get("question_pattern") or "知识缺口补全"
+        )
+        body = content.strip() or "\n".join(
+            [
+                "# 知识缺口补全",
+                "",
+                f"模式：{gap.get('question_pattern')}",
+                "",
+                "## 样例问法",
+                *[f"- {s}" for s in samples],
+            ]
+        )
+        created = self._knowledge.create_draft_unit(
+            title=unit_title,
+            content=body,
+            creator_id=creator_id,
+            creator_name=creator_name,
+            category="knowledge-gap",
+            tags=["knowledge-gap"],
+            summary=f"由知识缺口「{gap.get('question_pattern')}」一键建档",
+        )
+        updated = self._gaps.update(
+            gap_id,
+            {
+                "status": "resolved",
+                "resolved_unit_id": created.get("id") or "",
+            },
+        )
+        return {"gap": updated, "unit": created}
+

@@ -61,6 +61,8 @@ def build_access_log_entry(
     completion_tokens: int = 0,
     total_tokens: int = 0,
     response_time_ms: int = 0,
+    faq_cache_hit: bool = False,
+    max_recall_score: float | None = None,
 ) -> dict[str, Any]:
     return {
         "id": f"log-{uuid4().hex[:12]}",
@@ -75,5 +77,7 @@ def build_access_log_entry(
         "completion_tokens": int(completion_tokens),
         "total_tokens": int(total_tokens),
         "response_time_ms": int(response_time_ms),
+        "faq_cache_hit": bool(faq_cache_hit),
+        "max_recall_score": max_recall_score,
         "created_at": utc_now_iso(),
     }
