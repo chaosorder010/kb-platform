@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-from functools import lru_cache
-
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
-from knowledge.auth import AuthService, create_seeded_memory_repository
+from knowledge.api.deps import get_auth_service
 from knowledge.auth.schemas import LoginRequest, LoginResponse, MeResponse
+from knowledge.auth.service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-@lru_cache
-def get_auth_service() -> AuthService:
-    return AuthService(repository=create_seeded_memory_repository())
 
 
 def _extract_bearer(authorization: str | None) -> str:

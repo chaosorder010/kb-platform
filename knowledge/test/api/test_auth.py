@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from knowledge.api import app_main, auth_router
+from knowledge.api.deps import get_auth_service
 from knowledge.auth.password import hash_password
 from knowledge.auth.repository import MemoryAuthRepository
 from knowledge.auth.seed import SEED_DEPARTMENTS, SEED_ROLES, build_seed_users
@@ -21,8 +22,9 @@ def _client(monkeypatch, repo: MemoryAuthRepository | None = None) -> TestClient
 
     monkeypatch.setattr(app_main, "load_domain_routers", lambda: [auth_router.router])
     app = app_main.create_app()
-    app.dependency_overrides[auth_router.get_auth_service] = lambda: service
+    app.dependency_overrides[get_auth_service] = lambda: service
     return TestClient(app)
+
 
 
 def test_login_success_returns_token_user_info_permissions(monkeypatch):

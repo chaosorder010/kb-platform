@@ -1,19 +1,29 @@
 import { Layout, Menu, Typography } from "antd";
+import { useMemo, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { getAccessToken, getPermissions, hasPermission } from "./auth";
 import LoginPage from "./pages/Login";
+import OrgPage from "./pages/Org";
 import ProfilePage from "./pages/Profile";
 
 const { Header, Content } = Layout;
 
-const menuItems = [
-  { key: "/", label: <Link to="/">首页</Link> },
-  { key: "/login", label: <Link to="/login">登录</Link> },
-  { key: "/profile", label: <Link to="/profile">个人中心</Link> },
-  { key: "/org", label: <Link to="/org">组织</Link> },
-  { key: "/knowledge", label: <Link to="/knowledge">知识库</Link> },
-  { key: "/ai", label: <Link to="/ai">AI 对话</Link> },
-  { key: "/dashboard", label: <Link to="/dashboard">看板</Link> },
-  { key: "/settlement", label: <Link to="/settlement">沉淀</Link> },
+type MenuDef = {
+  key: string;
+  label: string;
+  permission?: string;
+  always?: boolean;
+};
+
+const MENU_DEFS: MenuDef[] = [
+  { key: "/", label: "首页", always: true },
+  { key: "/login", label: "登录", always: true },
+  { key: "/profile", label: "个人中心", always: true },
+  { key: "/org", label: "组织", permission: "menu:org" },
+  { key: "/knowledge", label: "知识库", permission: "menu:knowledge" },
+  { key: "/ai", label: "AI 对话", permission: "menu:ai" },
+  { key: "/dashboard", label: "看板", permission: "menu:dashboard" },
+  { key: "/settlement", label: "沉淀", permission: "menu:settlement" },
 ];
 
 function Page({ title }: { title: string }) {
@@ -24,8 +34,37 @@ function Page({ title }: { title: string }) {
   );
 }
 
+function RequirePerm({
+  code,
+  children,
+}: {
+  code: string;
+  children: ReactNode;
+}) {
+  if (!getAccessToken() || !hasPermission(code)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   const location = useLocation();
+  const permissions = getPermissions();
+  const loggedIn = !!getAccessToken();
+
+  const menuItems = useMemo(() => {
+    return MENU_DEFS.filter((item) => {
+      if (item.key === "/login") return !loggedIn;
+      if (item.key === "/profile") return loggedIn;
+      if (item.always) return true;
+      if (!item.permission) return true;
+      return permissions.includes(item.permission);
+    }).map((item) => ({
+      key: item.key,
+      label: <Link to={item.key}>{item.label}</Link>,
+    }));
+  }, [permissions, loggedIn]);
+
   const selected =
     menuItems.find((item) =>
       item.key === "/"
@@ -52,11 +91,46 @@ export default function App() {
           <Route path="/" element={<Page title="首页" />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/org" element={<Page title="组织管理" />} />
-          <Route path="/knowledge" element={<Page title="知识单元" />} />
-          <Route path="/ai" element={<Page title="AI 对话台" />} />
-          <Route path="/dashboard" element={<Page title="业务看板" />} />
-          <Route path="/settlement" element={<Page title="知识沉淀" />} />
+          <Route
+            path="/org"
+            element={
+              <RequirePerm code="menu:org">
+                <OrgPage />
+              </RequirePerm>
+            }
+          />
+          <Route
+            path="/knowledge"
+            element={
+              <RequirePerm code="menu:knowledge">
+                <Page title="知识单元" />
+              </RequirePerm>
+            }
+          />
+          <Route
+            path="/ai"
+            element={
+              <RequirePerm code="menu:ai">
+                <Page title="AI 对话台" />
+              </RequirePerm>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <RequirePerm code="menu:dashboard">
+                <Page title="业务看板" />
+              </RequirePerm>
+            }
+          />
+          <Route
+            path="/settlement"
+            element={
+              <RequirePerm code="menu:settlement">
+                <Page title="知识沉淀" />
+              </RequirePerm>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Content>

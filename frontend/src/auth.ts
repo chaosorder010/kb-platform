@@ -46,6 +46,21 @@ export function getStoredUser(): UserInfo | null {
   }
 }
 
+export function getPermissions(): string[] {
+  const raw = localStorage.getItem(PERMS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function hasPermission(code: string): boolean {
+  return getPermissions().includes(code);
+}
+
 export function persistSession(result: LoginResult): void {
   localStorage.setItem(TOKEN_KEY, result.access_token);
   localStorage.setItem(USER_KEY, JSON.stringify(result.user_info));
@@ -86,5 +101,24 @@ export async function fetchMe(): Promise<MeResult> {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || "获取个人信息失败");
   }
-  return (await response.json()) as MeResult;
+  const me = (await response.json()) as MeResult;
+  localStorage.setItem(USER_KEY, JSON.stringify(me));
+  localStorage.setItem(PERMS_KEY, JSON.stringify(me.permissions));
+  return me;
+}
+
+export async function authFetch(
+  input: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const token = getAccessToken();
+  if (!token) {
+    throw new Error("未登录");
+  }
+  const headers = new Headers(init.headers || {});
+  headers.set("Authorization", `Bearer ${token}`);
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  return fetch(input, { ...init, headers });
 }

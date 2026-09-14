@@ -18,6 +18,20 @@ class AuthRepository(Protocol):
 
     def get_permissions_for_roles(self, role_ids: list[str]) -> list[str]: ...
 
+    def list_users(self) -> list[dict]: ...
+
+    def list_departments(self) -> list[dict]: ...
+
+    def list_roles(self) -> list[dict]: ...
+
+    def get_role(self, role_id: str) -> dict | None: ...
+
+    def set_role_permissions(self, role_id: str, permissions: list[str]) -> dict | None: ...
+
+    def create_user(self, user: dict) -> dict: ...
+
+    def update_user(self, user_id: str, updates: dict) -> dict | None: ...
+
 
 class MemoryAuthRepository:
     def __init__(
@@ -60,6 +74,42 @@ class MemoryAuthRepository:
                     seen.add(code)
                     codes.append(code)
         return codes
+
+    def list_users(self) -> list[dict]:
+        return [deepcopy(u) for u in self._users_by_id.values()]
+
+    def list_departments(self) -> list[dict]:
+        return [deepcopy(d) for d in self._departments.values()]
+
+    def list_roles(self) -> list[dict]:
+        return [deepcopy(r) for r in self._roles.values()]
+
+    def get_role(self, role_id: str) -> dict | None:
+        role = self._roles.get(role_id)
+        return deepcopy(role) if role else None
+
+    def set_role_permissions(self, role_id: str, permissions: list[str]) -> dict | None:
+        role = self._roles.get(role_id)
+        if role is None:
+            return None
+        role["permissions"] = list(permissions)
+        return deepcopy(role)
+
+    def create_user(self, user: dict) -> dict:
+        self.upsert_user(user)
+        return deepcopy(user)
+
+    def update_user(self, user_id: str, updates: dict) -> dict | None:
+        user = self._users_by_id.get(user_id)
+        if user is None:
+            return None
+        old_username = user["username"]
+        user.update(updates)
+        if user["username"] != old_username:
+            self._users.pop(old_username, None)
+        self._users[user["username"]] = user
+        self._users_by_id[user_id] = user
+        return deepcopy(user)
 
 
 class MongoAuthRepository:

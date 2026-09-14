@@ -7,9 +7,11 @@ def load_domain_routers() -> list[APIRouter]:
     from knowledge.api.auth_router import router as auth_router
     from knowledge.api.import_router import router as import_router
     from knowledge.api.metrics_router import router as metrics_router
+    from knowledge.api.org_router import router as org_router
     from knowledge.api.query_router import router as query_router
 
-    return [auth_router, import_router, query_router, metrics_router]
+    return [auth_router, org_router, import_router, query_router, metrics_router]
+
 
 
 def create_app() -> FastAPI:
