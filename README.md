@@ -74,10 +74,10 @@ kb-platform/
 ├── frontend/                           # React + Vite + Ant Design
 ├── knowledge/                          # 核心知识库模块
 │   ├── api/
-│   │   ├── app_main.py                 # 统一入口（:8000，/api/*）
-│   │   ├── import_router.py            # 导入 APIRouter
-│   │   ├── query_router.py             # 查询 APIRouter
-│   │   └── metrics_router.py           # 指标 API
+│   │   ├── app_main.py                 # 统一入口（:8000，挂载 /api/*）
+│   │   ├── import_router.py            # 导入路由 → /api/upload|/api/status
+│   │   ├── query_router.py             # 查询路由 → /api/query|/api/stream|/api/history
+│   │   └── metrics_router.py           # 指标路由 → /api/metrics/*
 │   ├── core/ / processor/ / service/   # 配置、管道、业务层
 │   ├── front/                          # 旧 HTML 页面
 │   └── test/
