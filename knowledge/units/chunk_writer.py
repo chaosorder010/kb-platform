@@ -29,14 +29,11 @@ class MilvusChunkWriter:
             row = dict(chunk)
             row["unit_id"] = unit_id
             payload.append(row)
-        try:
-            from knowledge.utils.client.storage_clients import StorageClients
+        from knowledge.utils.client.storage_clients import StorageClients
 
-            client = StorageClients.get_milvus_client()
-            collection = "knowledge_chunks"
-            if not client.has_collection(collection):
-                return payload
-            client.insert(collection_name=collection, data=payload)
-        except Exception:
-            pass
+        client = StorageClients.get_milvus_client()
+        collection = "knowledge_chunks"
+        if not client.has_collection(collection):
+            raise RuntimeError(f"Milvus 集合不存在: {collection}")
+        client.insert(collection_name=collection, data=payload)
         return payload

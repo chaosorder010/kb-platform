@@ -198,3 +198,21 @@ def test_kbadmin_cannot_manage_users(monkeypatch):
         },
     )
     assert response.status_code == 403
+
+
+def test_update_department_leader_and_members(monkeypatch):
+    client = _client(monkeypatch)
+    token = _login(client)
+    users = client.get("/api/org/users", headers=_auth_header(token)).json()
+    alice = next(u for u in users if u["username"] == "alice")
+    bob = next(u for u in users if u["username"] == "bob")
+    response = client.put(
+        "/api/org/departments/dept-ops",
+        headers=_auth_header(token),
+        json={"leader_id": bob["id"], "member_ids": [alice["id"], bob["id"]]},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["leader"]["username"] == "bob"
+    member_names = {m["username"] for m in body["members"]}
+    assert member_names == {"alice", "bob"}

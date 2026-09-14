@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends
 
-from knowledge.api.deps import get_auth_service, get_org_service
-from knowledge.auth.service import AuthService
+from knowledge.api.deps import get_current_user, get_org_service
+from knowledge.auth.schemas import MeResponse
 from knowledge.org.schemas import (
     DepartmentNode,
+    DepartmentUpdateRequest,
     OrgRole,
     OrgUser,
     PermissionNode,
@@ -18,63 +19,45 @@ from knowledge.org.service import OrgService
 router = APIRouter(prefix="/org", tags=["org"])
 
 
-def _extract_bearer(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登录或登录凭证缺失",
-        )
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登录或登录凭证缺失",
-        )
-    return token
-
-
-def _current_permissions(
-    authorization: str | None,
-    auth_service: AuthService,
-) -> list[str]:
-    me = auth_service.me(_extract_bearer(authorization))
-    return list(me.permissions)
-
-
 @router.get("/departments", response_model=list[DepartmentNode])
 def list_departments(
-    authorization: str | None = Header(default=None),
-    auth_service: AuthService = Depends(get_auth_service),
+    user: MeResponse = Depends(get_current_user),
     org_service: OrgService = Depends(get_org_service),
 ) -> list[DepartmentNode]:
-    permissions = _current_permissions(authorization, auth_service)
     org_service.require_any_permission(
-        permissions,
+        list(user.permissions),
         ["menu:org", "dept:manage", "user:view"],
     )
     return org_service.list_department_tree()
 
 
+@router.put("/departments/{department_id}", response_model=DepartmentNode)
+def update_department(
+    department_id: str,
+    body: DepartmentUpdateRequest,
+    user: MeResponse = Depends(get_current_user),
+    org_service: OrgService = Depends(get_org_service),
+) -> DepartmentNode:
+    org_service.require_permission(list(user.permissions), "dept:manage")
+    return org_service.update_department(department_id, body)
+
+
 @router.get("/users", response_model=list[OrgUser])
 def list_users(
-    authorization: str | None = Header(default=None),
-    auth_service: AuthService = Depends(get_auth_service),
+    user: MeResponse = Depends(get_current_user),
     org_service: OrgService = Depends(get_org_service),
 ) -> list[OrgUser]:
-    permissions = _current_permissions(authorization, auth_service)
-    org_service.require_permission(permissions, "user:view")
+    org_service.require_permission(list(user.permissions), "user:view")
     return org_service.list_users()
 
 
 @router.post("/users", response_model=OrgUser)
 def create_user(
     body: UserCreateRequest,
-    authorization: str | None = Header(default=None),
-    auth_service: AuthService = Depends(get_auth_service),
+    user: MeResponse = Depends(get_current_user),
     org_service: OrgService = Depends(get_org_service),
 ) -> OrgUser:
-    permissions = _current_permissions(authorization, auth_service)
-    org_service.require_permission(permissions, "user:create")
+    org_service.require_permission(list(user.permissions), "user:create")
     return org_service.create_user(body)
 
 
@@ -82,23 +65,19 @@ def create_user(
 def update_user(
     user_id: str,
     body: UserUpdateRequest,
-    authorization: str | None = Header(default=None),
-    auth_service: AuthService = Depends(get_auth_service),
+    user: MeResponse = Depends(get_current_user),
     org_service: OrgService = Depends(get_org_service),
 ) -> OrgUser:
-    permissions = _current_permissions(authorization, auth_service)
-    org_service.require_permission(permissions, "user:update")
+    org_service.require_permission(list(user.permissions), "user:update")
     return org_service.update_user(user_id, body)
 
 
 @router.get("/roles", response_model=list[OrgRole])
 def list_roles(
-    authorization: str | None = Header(default=None),
-    auth_service: AuthService = Depends(get_auth_service),
+    user: MeResponse = Depends(get_current_user),
     org_service: OrgService = Depends(get_org_service),
 ) -> list[OrgRole]:
-    permissions = _current_permissions(authorization, auth_service)
-    org_service.require_any_permission(permissions, ["role:manage", "menu:org"])
+    org_service.require_any_permission(list(user.permissions), ["role:manage", "menu:org"])
     return org_service.list_roles()
 
 
@@ -106,21 +85,17 @@ def list_roles(
 def update_role_permissions(
     role_id: str,
     body: RolePermissionsRequest,
-    authorization: str | None = Header(default=None),
-    auth_service: AuthService = Depends(get_auth_service),
+    user: MeResponse = Depends(get_current_user),
     org_service: OrgService = Depends(get_org_service),
 ) -> OrgRole:
-    permissions = _current_permissions(authorization, auth_service)
-    org_service.require_permission(permissions, "role:manage")
+    org_service.require_permission(list(user.permissions), "role:manage")
     return org_service.set_role_permissions(role_id, body.permissions)
 
 
 @router.get("/permissions/tree", response_model=list[PermissionNode])
 def permission_tree(
-    authorization: str | None = Header(default=None),
-    auth_service: AuthService = Depends(get_auth_service),
+    user: MeResponse = Depends(get_current_user),
     org_service: OrgService = Depends(get_org_service),
 ) -> list[PermissionNode]:
-    permissions = _current_permissions(authorization, auth_service)
-    org_service.require_any_permission(permissions, ["role:manage", "menu:org"])
+    org_service.require_any_permission(list(user.permissions), ["role:manage", "menu:org"])
     return org_service.permission_tree()

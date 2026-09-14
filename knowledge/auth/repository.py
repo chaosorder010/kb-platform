@@ -32,6 +32,12 @@ class AuthRepository(Protocol):
 
     def update_user(self, user_id: str, updates: dict) -> dict | None: ...
 
+    def update_department(self, department_id: str, updates: dict) -> dict | None: ...
+
+    def upsert_department(self, department: dict) -> dict: ...
+
+    def upsert_role(self, role: dict) -> dict: ...
+
 
 class MemoryAuthRepository:
     def __init__(
@@ -111,6 +117,24 @@ class MemoryAuthRepository:
         self._users_by_id[user_id] = user
         return deepcopy(user)
 
+    def update_department(self, department_id: str, updates: dict) -> dict | None:
+        dept = self._departments.get(department_id)
+        if dept is None:
+            return None
+        dept.update(updates)
+        self._departments[department_id] = dept
+        return deepcopy(dept)
+
+    def upsert_department(self, department: dict) -> dict:
+        stored = deepcopy(department)
+        self._departments[stored["id"]] = stored
+        return deepcopy(stored)
+
+    def upsert_role(self, role: dict) -> dict:
+        stored = deepcopy(role)
+        self._roles[stored["id"]] = stored
+        return deepcopy(stored)
+
 
 class MongoAuthRepository:
     def __init__(self, db) -> None:
@@ -150,6 +174,56 @@ class MongoAuthRepository:
                     seen.add(code)
                     codes.append(code)
         return codes
+
+    def list_users(self) -> list[dict]:
+        return list(self._db.users.find({}, {"_id": 0}))
+
+    def list_departments(self) -> list[dict]:
+        return list(self._db.departments.find({}, {"_id": 0}))
+
+    def list_roles(self) -> list[dict]:
+        return list(self._db.roles.find({}, {"_id": 0}))
+
+    def get_role(self, role_id: str) -> dict | None:
+        return self._db.roles.find_one({"id": role_id}, {"_id": 0})
+
+    def set_role_permissions(self, role_id: str, permissions: list[str]) -> dict | None:
+        role = self.get_role(role_id)
+        if role is None:
+            return None
+        self._db.role_permissions.delete_many({"role_id": role_id})
+        if permissions:
+            self._db.role_permissions.insert_many(
+                [{"role_id": role_id, "permission_code": code, "permission_type": "action"} for code in permissions]
+            )
+        self._db.roles.update_one({"id": role_id}, {"$set": {"permissions": list(permissions)}})
+        return self.get_role(role_id)
+
+    def create_user(self, user: dict) -> dict:
+        self._db.users.update_one({"id": user["id"]}, {"$set": user}, upsert=True)
+        return dict(user)
+
+    def update_user(self, user_id: str, updates: dict) -> dict | None:
+        self._db.users.update_one({"id": user_id}, {"$set": updates})
+        return self.get_user_by_id(user_id)
+
+    def update_department(self, department_id: str, updates: dict) -> dict | None:
+        self._db.departments.update_one({"id": department_id}, {"$set": updates})
+        return self.get_department(department_id)
+
+    def upsert_department(self, department: dict) -> dict:
+        self._db.departments.update_one({"id": department["id"]}, {"$set": department}, upsert=True)
+        return dict(department)
+
+    def upsert_role(self, role: dict) -> dict:
+        self._db.roles.update_one({"id": role["id"]}, {"$set": role}, upsert=True)
+        permissions = list(role.get("permissions") or [])
+        self._db.role_permissions.delete_many({"role_id": role["id"]})
+        if permissions:
+            self._db.role_permissions.insert_many(
+                [{"role_id": role["id"], "permission_code": code, "permission_type": "action"} for code in permissions]
+            )
+        return dict(role)
 
 
 def create_seeded_memory_repository() -> MemoryAuthRepository:

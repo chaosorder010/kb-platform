@@ -5,7 +5,8 @@ from knowledge.auth.repository import MemoryAuthRepository
 from knowledge.auth.seed import SEED_DEPARTMENTS, SEED_ROLES, build_seed_users
 from knowledge.auth.service import AuthService
 from knowledge.units.repository import MemoryKnowledgeRepository
-from knowledge.units.service import KnowledgeService
+from knowledge.units.chunk_writer import MemoryChunkWriter
+from knowledge.units.service import KnowledgeService, light_import_pipeline
 
 
 def _seeded_auth() -> MemoryAuthRepository:
@@ -20,7 +21,11 @@ def _client(monkeypatch) -> tuple[TestClient, KnowledgeService]:
     auth_repo = _seeded_auth()
     auth_service = AuthService(repository=auth_repo)
     knowledge_repo = MemoryKnowledgeRepository()
-    knowledge_service = KnowledgeService(repository=knowledge_repo)
+    knowledge_service = KnowledgeService(
+        repository=knowledge_repo,
+        chunk_writer=MemoryChunkWriter(),
+        pipeline=light_import_pipeline,
+    )
 
     monkeypatch.setattr(
         app_main,

@@ -75,6 +75,7 @@ class UpLoadService:
 
             # 4.2 更新任务为失败
             update_task_status(task_id, TASK_STATUS_FAILED)
+            raise
         finally:
             trace_mgr.flush()
 

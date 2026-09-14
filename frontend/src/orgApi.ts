@@ -51,6 +51,18 @@ export async function fetchDepartments(): Promise<DepartmentNode[]> {
   return readJson(await authFetch("/api/org/departments"));
 }
 
+export async function updateDepartment(
+  departmentId: string,
+  payload: { leader_id?: string | null; member_ids?: string[] },
+): Promise<DepartmentNode> {
+  return readJson(
+    await authFetch(`/api/org/departments/${departmentId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
 export async function fetchUsers(): Promise<OrgUser[]> {
   return readJson(await authFetch("/api/org/users"));
 }

@@ -378,7 +378,7 @@ export default function KnowledgePage() {
               checked={permGlobal}
               onChange={(e) => setPermGlobal(e.target.checked)}
             />{" "}
-            设为全局可见（完整混合权限请在编辑页配置）
+            设为全局可见
           </label>
           <Link to={permTarget ? `/knowledge/${permTarget.id}` : "/knowledge"}>
             打开编辑页权限弹窗

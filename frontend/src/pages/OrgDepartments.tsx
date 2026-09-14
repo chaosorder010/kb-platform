@@ -1,9 +1,23 @@
-import { Alert, Button, Card, Tree, Typography } from "antd";
+import { Alert, Button, Card, Form, Input, Select, Space, Tree, Typography } from "antd";
 import type { DataNode } from "antd/es/tree";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getAccessToken, hasPermission } from "../auth";
-import { fetchDepartments, type DepartmentNode } from "../orgApi";
+import {
+  fetchDepartments,
+  fetchUsers,
+  updateDepartment,
+  type DepartmentNode,
+  type OrgUser,
+} from "../orgApi";
+
+function flatten(nodes: DepartmentNode[], acc: DepartmentNode[] = []): DepartmentNode[] {
+  for (const node of nodes) {
+    acc.push(node);
+    if (node.children?.length) flatten(node.children, acc);
+  }
+  return acc;
+}
 
 function toTreeData(nodes: DepartmentNode[]): DataNode[] {
   return nodes.map((node) => {
@@ -31,8 +45,23 @@ function toTreeData(nodes: DepartmentNode[]): DataNode[] {
 
 export default function OrgDepartmentsPage() {
   const [tree, setTree] = useState<DepartmentNode[]>([]);
+  const [users, setUsers] = useState<OrgUser[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const canManage = hasPermission("dept:manage");
+
+  async function reload() {
+    const [deps, userList] = await Promise.all([
+      fetchDepartments(),
+      canManage ? fetchUsers() : Promise.resolve([]),
+    ]);
+    setTree(deps);
+    setUsers(userList);
+    const flat = flatten(deps);
+    if (!selectedId && flat[0]) setSelectedId(flat[0].id);
+  }
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -51,7 +80,7 @@ export default function OrgDepartmentsPage() {
     }
     void (async () => {
       try {
-        setTree(await fetchDepartments());
+        await reload();
       } catch (err) {
         setError(err instanceof Error ? err.message : "加载失败");
       } finally {
@@ -59,6 +88,11 @@ export default function OrgDepartmentsPage() {
       }
     })();
   }, []);
+
+  const selected = useMemo(
+    () => flatten(tree).find((d) => d.id === selectedId) || null,
+    [tree, selectedId],
+  );
 
   if (error) {
     return (
@@ -76,11 +110,74 @@ export default function OrgDepartmentsPage() {
   }
 
   return (
-    <Card title="部门树" loading={loading}>
-      <Typography.Paragraph type="secondary">
-        展示部门层级、负责人与成员关联。
-      </Typography.Paragraph>
-      <Tree defaultExpandAll treeData={toTreeData(tree)} />
-    </Card>
+    <Space align="start" size={24} style={{ width: "100%" }}>
+      <Card title="部门树" loading={loading} style={{ minWidth: 420 }}>
+        <Tree
+          defaultExpandAll
+          treeData={toTreeData(tree)}
+          selectedKeys={selectedId ? [selectedId] : []}
+          onSelect={(keys) => {
+            if (keys[0]) setSelectedId(String(keys[0]));
+          }}
+        />
+      </Card>
+      {canManage ? (
+        <Card title="维护负责人与成员" loading={loading} style={{ minWidth: 360 }}>
+          {selected ? (
+            <Form
+              key={selected.id}
+              layout="vertical"
+              initialValues={{
+                leader_id: selected.leader?.id,
+                member_ids: selected.members.map((m) => m.id),
+              }}
+              onFinish={(values) => {
+                void (async () => {
+                  setSaving(true);
+                  try {
+                    await updateDepartment(selected.id, {
+                      leader_id: values.leader_id || "",
+                      member_ids: values.member_ids || [],
+                    });
+                    await reload();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "保存失败");
+                  } finally {
+                    setSaving(false);
+                  }
+                })();
+              }}
+            >
+              <Form.Item label="部门">
+                <Input value={selected.name} disabled />
+              </Form.Item>
+              <Form.Item label="负责人" name="leader_id">
+                <Select
+                  allowClear
+                  options={users.map((u) => ({
+                    value: u.id,
+                    label: `${u.display_name} (${u.username})`,
+                  }))}
+                />
+              </Form.Item>
+              <Form.Item label="成员" name="member_ids">
+                <Select
+                  mode="multiple"
+                  options={users.map((u) => ({
+                    value: u.id,
+                    label: `${u.display_name} (${u.username})`,
+                  }))}
+                />
+              </Form.Item>
+              <Button type="primary" htmlType="submit" loading={saving}>
+                保存
+              </Button>
+            </Form>
+          ) : (
+            <Typography.Text type="secondary">请选择部门</Typography.Text>
+          )}
+        </Card>
+      ) : null}
+    </Space>
   );
 }

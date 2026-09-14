@@ -272,15 +272,36 @@ class MongoKnowledgeRepository:
         )
 
     def put_object(self, object_key: str, content: bytes) -> None:
+        import io
+        import os
+
+        from knowledge.utils.client.storage_clients import StorageClients
+
+        client = StorageClients.get_minio_client()
+        bucket = os.environ["MINIO_BUCKET_NAME"]
+        client.put_object(
+            bucket,
+            object_key,
+            io.BytesIO(content),
+            length=len(content),
+            content_type="application/octet-stream",
+        )
         self._db.unit_objects.update_one(
             {"object_key": object_key},
-            {"$set": {"object_key": object_key, "content": content}},
+            {"$set": {"object_key": object_key, "size": len(content), "storage": "minio"}},
             upsert=True,
         )
 
     def get_object(self, object_key: str) -> bytes | None:
-        row = self._db.unit_objects.find_one({"object_key": object_key}, {"_id": 0})
-        if not row:
-            return None
-        content = row.get("content")
-        return bytes(content) if content is not None else None
+        import os
+
+        from knowledge.utils.client.storage_clients import StorageClients
+
+        client = StorageClients.get_minio_client()
+        bucket = os.environ["MINIO_BUCKET_NAME"]
+        response = client.get_object(bucket, object_key)
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()

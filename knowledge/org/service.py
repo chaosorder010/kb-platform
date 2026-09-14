@@ -8,6 +8,7 @@ from knowledge.auth.password import hash_password
 from knowledge.auth.repository import AuthRepository
 from knowledge.org.permissions import PERMISSION_TREE
 from knowledge.org.schemas import (
+    DepartmentUpdateRequest,
     DepartmentInfo,
     DepartmentNode,
     OrgRole,
@@ -67,6 +68,51 @@ class OrgService:
 
         roots = by_parent.get(None, [])
         return [build(root) for root in roots]
+
+    def update_department(self, department_id: str, body: DepartmentUpdateRequest) -> DepartmentNode:
+        dept = self._repo.get_department(department_id)
+        if dept is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="部门不存在")
+        updates: dict = {}
+        if body.leader_id is not None:
+            if body.leader_id and self._repo.get_user_by_id(body.leader_id) is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="负责人不存在")
+            updates["leader_id"] = body.leader_id
+        if updates:
+            self._repo.update_department(department_id, updates)
+        if body.member_ids is not None:
+            wanted = set(body.member_ids)
+            for uid in wanted:
+                user = self._repo.get_user_by_id(uid)
+                if user is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"成员不存在: {uid}",
+                    )
+            fallback = dept.get("parent_id") or ""
+            for user in self._repo.list_users():
+                uid = user["id"]
+                if uid in wanted:
+                    if user.get("department_id") != department_id:
+                        self._repo.update_user(uid, {"department_id": department_id})
+                elif user.get("department_id") == department_id and fallback:
+                    self._repo.update_user(uid, {"department_id": fallback})
+        tree = self.list_department_tree()
+
+        def find(nodes: list[DepartmentNode]) -> DepartmentNode | None:
+            for node in nodes:
+                if node.id == department_id:
+                    return node
+                found = find(node.children or [])
+                if found:
+                    return found
+            return None
+
+        node = find(tree)
+        if node is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="部门不存在")
+        return node
+
 
     def list_users(self) -> list[OrgUser]:
         return [self._to_org_user(user) for user in self._repo.list_users()]

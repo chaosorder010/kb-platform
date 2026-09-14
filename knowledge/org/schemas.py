@@ -77,3 +77,8 @@ class RolePermissionsRequest(BaseModel):
 
 
 UserRecord = dict[str, Any]
+
+
+class DepartmentUpdateRequest(BaseModel):
+    leader_id: str | None = None
+    member_ids: list[str] | None = None

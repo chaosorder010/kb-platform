@@ -42,3 +42,9 @@ def test_create_app_mounts_converged_domain_routes(monkeypatch):
     assert client.post("/api/upload").json() == {"ok": True}
     assert client.post("/api/query").json() == {"ok": True}
     assert client.get("/api/metrics/overview").json() == {"ok": True}
+
+
+def test_default_app_does_not_expose_legacy_upload_query():
+    client = TestClient(app_main.create_app())
+    assert client.post("/api/upload").status_code == 404
+    assert client.post("/api/query").status_code == 404

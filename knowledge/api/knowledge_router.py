@@ -7,17 +7,14 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     File,
-    Header,
     HTTPException,
     Query,
     UploadFile,
     status,
 )
 
-from knowledge.api.deps import get_auth_service
+from knowledge.api.deps import require_permissions
 from knowledge.auth.schemas import MeResponse
-from knowledge.auth.service import AuthService
-from knowledge.units.repository import MemoryKnowledgeRepository
 from knowledge.units.schemas import (
     AttachmentItem,
     BatchDeleteRequest,
@@ -42,43 +39,17 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
 @lru_cache
 def get_knowledge_service() -> KnowledgeService:
-    return KnowledgeService(repository=MemoryKnowledgeRepository())
+    from knowledge.units.chunk_writer import MemoryChunkWriter
+    from knowledge.units.repository import MongoKnowledgeRepository
+    from knowledge.units.service import existing_import_graph_pipeline
+    from knowledge.utils.client.storage_clients import StorageClients
 
-
-def _extract_bearer(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登录或登录凭证缺失",
-        )
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登录或登录凭证缺失",
-        )
-    return token
-
-
-def get_current_user(
-    authorization: str | None = Header(default=None),
-    auth_service: AuthService = Depends(get_auth_service),
-) -> MeResponse:
-    token = _extract_bearer(authorization)
-    return auth_service.me(token)
-
-
-def require_permissions(*codes: str):
-    def _checker(user: MeResponse = Depends(get_current_user)) -> MeResponse:
-        missing = [code for code in codes if code not in user.permissions]
-        if missing:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="无操作权限",
-            )
-        return user
-
-    return _checker
+    db = StorageClients.get_mongo_db()
+    return KnowledgeService(
+        repository=MongoKnowledgeRepository(db),
+        chunk_writer=MemoryChunkWriter(),
+        pipeline=existing_import_graph_pipeline,
+    )
 
 
 @router.post("/import", response_model=ImportResponse)

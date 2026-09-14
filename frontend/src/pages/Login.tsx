@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Form, Input, Typography } from "antd";
+import { Alert, Button, Card, Form, Input } from "antd";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { login, persistSession } from "../auth";
@@ -24,9 +24,6 @@ export default function LoginPage() {
 
   return (
     <Card title="登录" style={{ maxWidth: 420, margin: "48px auto" }}>
-      <Typography.Paragraph type="secondary">
-        使用种子账号登录后进入个人中心。
-      </Typography.Paragraph>
       {error ? (
         <Alert
           type="error"
@@ -41,7 +38,7 @@ export default function LoginPage() {
           name="username"
           rules={[{ required: true, message: "请输入用户名" }]}
         >
-          <Input autoComplete="username" placeholder="admin" />
+          <Input autoComplete="username" />
         </Form.Item>
         <Form.Item
           label="密码"

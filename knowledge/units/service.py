@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import uuid
 from pathlib import Path
@@ -40,7 +39,7 @@ class KnowledgeService:
     ) -> None:
         self._repo = repository
         self._chunk_writer = chunk_writer or MemoryChunkWriter()
-        self._pipeline = pipeline or self._default_light_pipeline
+        self._pipeline = pipeline or light_import_pipeline
         self._code_seq = 0
 
     def create_unit_for_file(
@@ -437,7 +436,9 @@ class KnowledgeService:
                     "running_list": [steps[2]],
                 },
             )
-            chunks = self._pipeline(unit_id=unit_id, filename=filename, text=text)
+            chunks = self._pipeline(
+                unit_id=unit_id, filename=filename, text=text, content=content
+            )
             done.append(steps[2])
             self._repo.update_task(
                 task_id,
@@ -557,42 +558,61 @@ class KnowledgeService:
             raise ValueError("Word 文档解析结果为空")
         return text
 
-    @staticmethod
-    def _default_light_pipeline(
-        *,
-        unit_id: str,
-        filename: str,
-        text: str,
-    ) -> list[dict[str, Any]]:
-        pieces = [p.strip() for p in re.split(r"\n{2,}|(?<=。)", text) if p and p.strip()]
-        if not pieces:
-            pieces = [text or title_from_filename(filename)]
-        chunks = []
-        for idx, piece in enumerate(pieces):
-            chunks.append(
-                {
-                    "content": piece,
-                    "title": title_from_filename(filename),
-                    "parent_title": "",
-                    "file_title": title_from_filename(filename),
-                    "item_name": "",
-                    "unit_id": unit_id,
-                    "chunk_index": idx,
-                }
-            )
-        return chunks
+
+def light_import_pipeline(
+    *,
+    unit_id: str,
+    filename: str,
+    text: str,
+    content: bytes = b"",
+) -> list[dict[str, Any]]:
+    pieces = [p.strip() for p in re.split(r"\n{2,}|(?<=。)", text) if p and p.strip()]
+    if not pieces:
+        pieces = [text or title_from_filename(filename)]
+    chunks = []
+    for idx, piece in enumerate(pieces):
+        chunks.append(
+            {
+                "content": piece,
+                "title": title_from_filename(filename),
+                "parent_title": "",
+                "file_title": title_from_filename(filename),
+                "item_name": "",
+                "unit_id": unit_id,
+                "chunk_index": idx,
+            }
+        )
+    return chunks
 
 
-def maybe_run_heavy_import_graph(
-    task_id: str,
-    import_file_path: str,
-    file_dir: str,
-    unit_id: str = "",
-) -> None:
-    _ = unit_id
-    if os.getenv("KB_IMPORT_HEAVY", "").lower() not in {"1", "true", "yes"}:
-        return
+def existing_import_graph_pipeline(
+    *,
+    unit_id: str,
+    filename: str,
+    text: str,
+    content: bytes = b"",
+) -> list[dict[str, Any]]:
+    import tempfile
+    from pathlib import Path as _Path
+
     from knowledge.service.upload_service import UpLoadService
 
-    service = UpLoadService()
-    service.run_import_graph(task_id, import_file_path, file_dir, unit_id=unit_id)
+    file_type = detect_file_type(filename)
+    with tempfile.TemporaryDirectory(prefix="kb-import-") as tmp:
+        tmp_dir = _Path(tmp)
+        if file_type == "pdf":
+            file_path = tmp_dir / (title_from_filename(filename) + ".pdf")
+            file_path.write_bytes(content or b"")
+        else:
+            file_path = tmp_dir / (title_from_filename(filename) + ".md")
+            file_path.write_text(text or "", encoding="utf-8")
+        task_id = f"import-{unit_id}"
+        UpLoadService().run_import_graph(
+            task_id, str(file_path), str(tmp_dir), unit_id=unit_id
+        )
+    return light_import_pipeline(
+        unit_id=unit_id,
+        filename=filename,
+        text=text or title_from_filename(filename),
+        content=content,
+    )
