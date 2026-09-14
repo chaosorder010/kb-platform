@@ -6,7 +6,9 @@ from knowledge.auth.seed import SEED_DEPARTMENTS, SEED_ROLES, build_seed_users
 from knowledge.auth.service import AuthService
 from knowledge.units.repository import MemoryKnowledgeRepository
 from knowledge.units.service import KnowledgeService
+from io import BytesIO
 
+from docx import Document
 
 def _seeded_auth() -> MemoryAuthRepository:
     return MemoryAuthRepository(
@@ -100,9 +102,122 @@ def test_import_rejects_unsupported_format(monkeypatch):
     response = client.post(
         "/api/knowledge/import",
         headers={"Authorization": f"Bearer {token}"},
-        files=[("files", ("a.docx", b"xx", "application/octet-stream"))],
+        files=[("files", ("a.xlsx", b"xx", "application/octet-stream"))],
     )
     assert response.status_code == 400
+    assert "不支持" in response.json()["detail"]
+
+
+def _docx_bytes(paragraphs: list[str]) -> bytes:
+    document = Document()
+    for text in paragraphs:
+        document.add_paragraph(text)
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def test_import_docx_creates_unit_and_runs_pipeline(monkeypatch):
+    client, service = _client(monkeypatch)
+    token = _login(client, "kbadmin", "Kb@123456")
+    content = _docx_bytes(["Word 导入段落一。", "Word 导入段落二。"])
+
+    response = client.post(
+        "/api/knowledge/import",
+        headers={"Authorization": f"Bearer {token}"},
+        files=[
+            (
+                "files",
+                (
+                    "操作手册.docx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ),
+            )
+        ],
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["tasks"]) == 1
+    task = body["tasks"][0]
+    assert task["unit_id"].startswith("ku-")
+    assert task["filename"] == "操作手册.docx"
+
+    written = service.run_import_task_sync(task["task_id"])
+    assert written
+    assert all(chunk.get("unit_id") == task["unit_id"] for chunk in written)
+
+    units = client.get(
+        "/api/knowledge/units",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"q": "操作手册"},
+    )
+    assert units.status_code == 200
+    items = units.json()["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == task["unit_id"]
+    assert items[0]["file_type"] == "docx"
+    assert items[0]["status"] == "published"
+    assert "Word 导入" in items[0]["content"]
+
+    status = client.get(
+        f"/api/knowledge/import/tasks/{task['task_id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert status.status_code == 200
+    assert status.json()["status"] == "completed"
+    assert status.json()["unit_id"] == task["unit_id"]
+
+
+def test_import_corrupt_docx_returns_clear_error(monkeypatch):
+    client, service = _client(monkeypatch)
+    token = _login(client, "kbadmin", "Kb@123456")
+    tasks = service.import_files(
+        files=[("坏文件.docx", b"not-a-real-docx")],
+        creator_id="user-kbadmin",
+        creator_name="知识管理员",
+    )
+    task = tasks[0]
+    try:
+        service.run_import_task_sync(task["task_id"])
+        raise AssertionError("expected corrupt docx to fail")
+    except ValueError as exc:
+        assert "Word" in str(exc) or "docx" in str(exc).lower() or "解析" in str(exc)
+
+    status = client.get(
+        f"/api/knowledge/import/tasks/{task['task_id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert status.status_code == 200
+    body = status.json()
+    assert body["status"] == "failed"
+    assert body["error"]
+
+    units = service.list_units(q="坏文件")
+    assert units["items"][0]["status"] == "failed"
+
+
+def test_import_legacy_doc_returns_clear_error(monkeypatch):
+    client, service = _client(monkeypatch)
+    token = _login(client, "kbadmin", "Kb@123456")
+    tasks = service.import_files(
+        files=[("旧稿.doc", b"\xd0\xcf\x11\xe0")],
+        creator_id="user-kbadmin",
+        creator_name="知识管理员",
+    )
+    task = tasks[0]
+    try:
+        service.run_import_task_sync(task["task_id"])
+        raise AssertionError("expected legacy .doc to fail")
+    except ValueError as exc:
+        assert ".doc" in str(exc) or "docx" in str(exc)
+
+    status = client.get(
+        f"/api/knowledge/import/tasks/{task['task_id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert status.json()["status"] == "failed"
+    assert status.json()["error"]
 
 
 def test_import_task_status_progress(monkeypatch):

@@ -214,12 +214,12 @@ export default function KnowledgePage() {
           <Upload.Dragger
             multiple
             directory
-            accept=".pdf,.md,.markdown,.txt"
+            accept=".pdf,.md,.markdown,.txt,.doc,.docx"
             fileList={fileList}
             beforeUpload={() => false}
             onChange={({ fileList: next }) => setFileList(next)}
           >
-            <p>点击或拖拽上传 PDF / Markdown / TXT，支持多文件与文件夹选择</p>
+            <p>点击或拖拽上传 PDF / Word / Markdown / TXT，支持多文件与文件夹选择</p>
           </Upload.Dragger>
           {tasks.length ? (
             <Space direction="vertical" style={{ width: "100%", marginTop: 16 }}>

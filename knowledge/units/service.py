@@ -10,12 +10,14 @@ from knowledge.units.chunk_writer import ChunkWriter, MemoryChunkWriter
 from knowledge.units.repository import KnowledgeRepository
 from knowledge.units.schemas import utc_now_iso
 
-ALLOWED_EXTENSIONS = {".pdf", ".md", ".markdown", ".txt"}
+ALLOWED_EXTENSIONS = {".pdf", ".md", ".markdown", ".txt", ".docx", ".doc"}
 EXT_TO_TYPE = {
     ".pdf": "pdf",
     ".md": "md",
     ".markdown": "md",
     ".txt": "txt",
+    ".docx": "docx",
+    ".doc": "doc",
 }
 
 
@@ -53,7 +55,7 @@ class KnowledgeService:
     ) -> dict[str, Any]:
         file_type = detect_file_type(filename)
         if file_type is None:
-            raise ValueError("仅支持 PDF、Markdown、TXT 格式")
+            raise ValueError("仅支持 PDF、Markdown、TXT、Word（.doc/.docx）格式")
         now = utc_now_iso()
         self._code_seq += 1
         unit_id = f"ku-{uuid.uuid4().hex[:12]}"
@@ -274,7 +276,38 @@ class KnowledgeService:
             cleaned = re.sub(r"[^\x20-\x7E\u4e00-\u9fff\n]", " ", text)
             cleaned = cleaned.strip() or f"[PDF] {title_from_filename(filename)}"
             return cleaned
+        if file_type == "docx":
+            return self._extract_docx_text(content)
+        if file_type == "doc":
+            raise ValueError("不支持旧版 .doc 二进制格式，请另存为 .docx 后重试")
         raise ValueError("不支持的文件格式")
+
+    @staticmethod
+    def _extract_docx_text(content: bytes) -> str:
+        from io import BytesIO
+
+        from docx import Document
+
+        try:
+            document = Document(BytesIO(content))
+        except Exception as exc:
+            raise ValueError(f"Word 文档解析失败，请确认文件为有效的 .docx：{exc}") from exc
+
+        parts: list[str] = []
+        for paragraph in document.paragraphs:
+            text = (paragraph.text or "").strip()
+            if text:
+                parts.append(text)
+        for table in document.tables:
+            for row in table.rows:
+                cells = [(cell.text or "").strip() for cell in row.cells]
+                cells = [c for c in cells if c]
+                if cells:
+                    parts.append(" | ".join(cells))
+        text = "\n\n".join(parts).strip()
+        if not text:
+            raise ValueError("Word 文档解析结果为空")
+        return text
 
     @staticmethod
     def _default_light_pipeline(

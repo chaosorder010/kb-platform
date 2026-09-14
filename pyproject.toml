@@ -34,6 +34,9 @@ dependencies = [
     # PDF 解析
     "mineru[all]>=2.0",
 
+    # Word 解析
+    "python-docx>=1.1.0",
+
     # 图谱/流程可视化
     "grandalf>=0.8",
 
