@@ -9,6 +9,10 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "pydantic>=2.0",
 
+    # 认证
+    "PyJWT>=2.8",
+    "bcrypt>=4.0",
+
     # 环境配置
     "python-dotenv>=1.0",
 

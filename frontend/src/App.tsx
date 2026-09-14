@@ -1,11 +1,14 @@
 import { Layout, Menu, Typography } from "antd";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import LoginPage from "./pages/Login";
+import ProfilePage from "./pages/Profile";
 
 const { Header, Content } = Layout;
 
 const menuItems = [
   { key: "/", label: <Link to="/">首页</Link> },
   { key: "/login", label: <Link to="/login">登录</Link> },
+  { key: "/profile", label: <Link to="/profile">个人中心</Link> },
   { key: "/org", label: <Link to="/org">组织</Link> },
   { key: "/knowledge", label: <Link to="/knowledge">知识库</Link> },
   { key: "/ai", label: <Link to="/ai">AI 对话</Link> },
@@ -47,8 +50,8 @@ export default function App() {
       <Content style={{ padding: 24 }}>
         <Routes>
           <Route path="/" element={<Page title="首页" />} />
-          <Route path="/login" element={<Page title="登录" />} />
-          <Route path="/profile" element={<Page title="个人中心" />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="/org" element={<Page title="组织管理" />} />
           <Route path="/knowledge" element={<Page title="知识单元" />} />
           <Route path="/ai" element={<Page title="AI 对话台" />} />
