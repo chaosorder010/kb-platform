@@ -21,7 +21,7 @@ services: # 定义需要运行的各个服务（容器）集合
 
   minio: # 定义 MinIO 服务。Milvus 依赖此对象存储来保存持久化的向量切片和标量日志文件
     container_name: milvus-minio # 固定容器名称为 milvus-minio
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z # 指定 MinIO 的确切发行版镜像
+    image: quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z # 指定 MinIO 的确切发行版镜像
     environment: # 配置 MinIO 的初始化认证信息
       MINIO_ACCESS_KEY: minioadmin # 设置 MinIO 的 Access Key（登录账号）
       MINIO_SECRET_KEY: minioadmin # 设置 MinIO 的 Secret Key（登录密码）
@@ -76,26 +76,26 @@ services: # 定义需要运行的各个服务（容器）集合
       - "7000:7000" # 映射到宿主机 7000，开发时浏览器直接访问 http://localhost:7000 即可进入管理面板
     volumes: # 数据挂载
       # 映射您指定的 TLS 目录
-      - /root/milvus:/app/tls # 若后续为 Milvus 配置了安全证书（TLS/SSL），Attu 将从这里读取证书建立安全连接
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/attu_tls:/app/tls # Attu TLS 目录（本地可写）
     restart: always  # 总是自动重启
     depends_on: # 依赖控制
       - standalone    # 必须等 Milvus (standalone) 启动完毕后，UI 界面才跟着启动
 
   mongo: # 定义 MongoDB 服务
     container_name: my-mongo # 固定容器名称为 my-mongo
-    image: mongo:7.0 # 指定使用的 mongo 官方镜像及具体版本号 7.0
+    image: docker.m.daocloud.io/library/mongo:7.0 # 国内镜像源
     environment: # 配置 MongoDB 的初始化账号密码
       - MONGO_INITDB_ROOT_USERNAME=admin # 初始化 root 用户名
       - MONGO_INITDB_ROOT_PASSWORD=123456 # 初始化 root 密码
     ports: # 配置端口映射
       - "27017:27017" # 映射给外部连接使用的 27017 端口
     volumes: # 数据卷持久化挂载
-      - /mongo-data:/data/db # 将宿主机目录 /mongo-data 映射给 MongoDB 存放实际数据
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/mongo:/data/db # 将宿主机目录映射给 MongoDB 存放实际数据
     restart: always
 
   langfuse-postgres: # LangFuse 依赖的 PostgreSQL 数据库
     container_name: langfuse-postgres
-    image: postgres:16
+    image: docker.m.daocloud.io/library/postgres:16 # 国内镜像源
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
@@ -111,7 +111,7 @@ services: # 定义需要运行的各个服务（容器）集合
 
   langfuse-server: # LangFuse LLM 可观测性平台
     container_name: langfuse-server
-    image: langfuse/langfuse:2
+    image: docker.m.daocloud.io/langfuse/langfuse:2 # 国内镜像源
     ports:
       - "3000:3000"
     environment:
