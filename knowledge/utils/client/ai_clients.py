@@ -28,6 +28,8 @@ class BGEM3EmbeddingFunction:
         result = model.encode_documents(docs)  # {'dense': ndarray, 'sparse': csr_array}
     """
 
+    _encode_lock = threading.Lock()
+
     def __init__(self, model_name: str, device: str = "cpu", use_fp16: bool = True):
         # BGEM3FlagModel 用 devices（复数列表），BGEM3EmbeddingFunction 用 device（单数字符串）
         devices = [device] if device else ["cpu"]
@@ -39,22 +41,24 @@ class BGEM3EmbeddingFunction:
 
     def encode_documents(self, documents: List[str]) -> Dict[str, Any]:
         """与旧 pymilvus BGEM3EmbeddingFunction.encode_documents 接口一致"""
-        output = self._model.encode(
-            documents,
-            batch_size=8,
-            max_length=8192,
-            return_dense=True,
-            return_sparse=True,
-        )
-        # 将 lexical_weights (List[Dict[int,float]]) 转换回 csr_array
-        sparse_csr = self._lexical_weights_to_csr(
-            output["lexical_weights"],
-            vocab_size=self._model.model.config.vocab_size,
-        )
-        return {
-            "dense": output["dense_vecs"],
-            "sparse": sparse_csr,
-        }
+        # FlagEmbedding/CUDA encode 非线程安全；并发调用会 SIGSEGV
+        with self._encode_lock:
+            output = self._model.encode(
+                documents,
+                batch_size=8,
+                max_length=8192,
+                return_dense=True,
+                return_sparse=True,
+            )
+            # 将 lexical_weights (List[Dict[int,float]]) 转换回 csr_array
+            sparse_csr = self._lexical_weights_to_csr(
+                output["lexical_weights"],
+                vocab_size=self._model.model.config.vocab_size,
+            )
+            return {
+                "dense": output["dense_vecs"],
+                "sparse": sparse_csr,
+            }
 
     @staticmethod
     def _lexical_weights_to_csr(
