@@ -355,7 +355,7 @@ class AnswerOutPutNode(BaseNode):
         user_query = state.get('original_query')
 
         # 3. 获取改写后的查询问题
-        rewritten_query = state.get('rewritten_query')
+        rewritten_query = state.get('rewritten_query') or ""
 
         # 4. 获取商品名列表
         item_names = state.get('item_names') or []

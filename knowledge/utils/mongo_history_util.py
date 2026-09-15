@@ -30,7 +30,7 @@ def save_chat_message(
         "user_id": user_id or "",
         "role": role,
         "text": text,
-        "rewritten_query": rewritten_query,
+        "rewritten_query": rewritten_query or "",
         "item_names": item_names or [],
         "image_url": image_url,
         "ts": ts,

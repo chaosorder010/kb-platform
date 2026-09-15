@@ -35,7 +35,7 @@ class ChatHistoryItem(BaseModel):
     session_id: str = ""
     role: str = ""
     text: str = ""
-    rewritten_query: str = ""
+    rewritten_query: Optional[str] = ""
     item_names: list[str] = Field(default_factory=list)
     ts: Optional[float] = None
 

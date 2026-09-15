@@ -197,7 +197,7 @@ class ChatService:
                 "session_id": session_id,
                 "role": r.get("role", ""),
                 "text": r.get("text", ""),
-                "rewritten_query": r.get("rewritten_query", ""),
+                "rewritten_query": r.get("rewritten_query") or "",
                 "item_names": r.get("item_names", []),
                 "ts": r.get("ts"),
             }
