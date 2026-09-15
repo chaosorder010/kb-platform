@@ -52,16 +52,17 @@ export default function SettlementPage() {
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (refresh = false) => {
     setLoading(true);
     try {
+      const refreshQuery = refresh ? "refresh=true" : "refresh=false";
       const [rec, pub, gapResp] = await Promise.all([
         apiJson<{ items: FaqItem[] }>(
-          "/api/settlement/faqs/recommendations?refresh=true",
+          `/api/settlement/faqs/recommendations?${refreshQuery}`,
         ),
         apiJson<{ items: FaqItem[] }>("/api/settlement/faqs?status=published"),
         apiJson<{ items: GapItem[] }>(
-          "/api/settlement/knowledge-gaps?refresh=true",
+          `/api/settlement/knowledge-gaps?${refreshQuery}`,
         ),
       ]);
       setRecommendations(rec.items || []);
@@ -75,7 +76,7 @@ export default function SettlementPage() {
   }, []);
 
   useEffect(() => {
-    if (loggedIn && canManage) void reload();
+    if (loggedIn && canManage) void reload(false);
   }, [loggedIn, canManage, reload]);
 
   if (!loggedIn) return <Navigate to="/login" replace />;
@@ -147,7 +148,7 @@ export default function SettlementPage() {
       <Typography.Title level={3} style={{ margin: 0 }}>
         知识沉淀
       </Typography.Title>
-      <Button onClick={() => void reload()} loading={loading}>
+      <Button onClick={() => void reload(true)} loading={loading}>
         刷新挖掘
       </Button>
       <Tabs

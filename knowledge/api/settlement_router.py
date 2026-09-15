@@ -53,7 +53,7 @@ def get_settlement_service() -> SettlementService:
 
 @router.get("/faqs/recommendations")
 def list_recommendations(
-    refresh: bool = Query(default=True),
+    refresh: bool = Query(default=False),
     user: MeResponse = Depends(require_permissions("settlement:manage")),
     service: SettlementService = Depends(get_settlement_service),
 ):
@@ -129,7 +129,7 @@ class GapCreateUnitRequest(BaseModel):
 
 @router.get("/knowledge-gaps")
 def list_knowledge_gaps(
-    refresh: bool = Query(default=True),
+    refresh: bool = Query(default=False),
     status_filter: Optional[str] = Query(default=None, alias="status"),
     user: MeResponse = Depends(require_permissions("settlement:manage")),
     service: SettlementService = Depends(get_settlement_service),
