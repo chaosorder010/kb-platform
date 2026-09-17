@@ -1,9 +1,28 @@
 # 环境与配置
 .venv/
 .idea/
+.cursor/
+.codegraph/
 __pycache__/
 *.pyc
+.env
+**/.env
+
+# 本地临时产物（探针、联调稿、后端日志）
+.tmp/
+
+# Docker Compose 本地数据卷
+volumes/
+
+# 调试日志
+*.log
+debug-*.log
+
 # 忽略 eval 目录下的 finetuned_bge_m3 文件夹及其所有内容
 eval/finetuned_bge_m3/
 .claude
 尚硅谷大模型技术之LLM-V1.2.docx
+docs/plan
+docs/archive
+.dotdotgod
+/.llm-wiki/
