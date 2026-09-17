@@ -1,0 +1,13 @@
+{
+  "llm-wiki": {
+    "synthesisLanguage": "zh",
+    "customTypes": {
+      "architecture-decision": "decisions",
+      "specification": "spec",
+      "architecture": "arch",
+      "verification": "test",
+      "implementation-plan": "plan",
+      "archive-record": "archive"
+    }
+  }
+}
