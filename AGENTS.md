@@ -1,68 +1,81 @@
-# 知识库管理平台
+# Codebase Knowledge Graph (codebase-memory-mcp)
+This project uses codebase-memory-mcp to maintain a knowledge graph of the codebase. ALWAYS prefer MCP graph tools over grep/glob/file-search for code discovery.
 
-企业级知识库管理平台 + RAG 引擎。说明见 `README.md`；API 见 `docs/api.md`。
+## Priority Order
+1. `search_graph`— find functions, classes, routes, variables by pattern
+2. `trace_path`— trace who calls a function or what it calls
+3. `get_code_snippet`— read specific function/class source code
+4. `query_graph`— run Cypher queries for complex patterns
+5. `get_architecture`— high-level project summary
 
-## Context pointers
+## When to fall back to grep/glob
+- Searching for string literals, error messages, config values
+- Searching non-code files (Dockerfiles, shell scripts, configs)
+- When MCP tools return insufficient results
+## Examples
+- Find a handler:`search_graph(name_pattern=".*OrderHandler.*")`
+- Who calls it:`trace_path(function_name="OrderHandler", direction="inbound")`
+- Read source:`get_code_snippet(qualified_name="pkg/orders.OrderHandler")`
 
-**Issue tracker** — GitHub `chaosorder010/kb-platform`；CLI 约定见 `docs/agents/issue-tracker.md`。
+你需要遵循下面的规则
 
-**Domain** — 探索代码前读 `CONTEXT.md` 与相关 `docs/adr/`（lazy 创建见 `docs/agents/domain.md`）。
+# 原则
 
-**Spec** — 需求与改造 SSOT：`docs/spec/改造计划/`。
+做长期正确的事，做长期正确的事，做长期正确的事
 
-**联调** — 端到端结论：`docs/reports/联调报告.md`。
+- 长期主义，面向维护，新增改动应降低未来开发成本，禁止引入技术债
+- 警惕可能产生架构分叉的编码，按最佳实践来做统一的结构
+- 禁止做掩耳盗铃的事情，我们必须真实的做事
+- 单一真相源（SSOT），写入口唯一，其他皆派生、复用
+- 遵循可执行最佳、现代的实践
+- 写代码前思考这个代码是否有必须写，积极引入成熟第三方库解决问题，而不是自己造轮子
+- 优先阅读代码而非写代码，优先寻找项目内可用可扩展的代码
+- 迭代修改而非增量修改，重写/重构后删旧代码
+- 遵循KISS原则，选最短且长期最佳实现路径，架构导致冗余就简化架构
+- 做合适程度的强类型，相同的类型也单一类型定义源
+- 不需计算编码成本，AI编码不是人工，永远选择长期最佳的方案
+- 做深度封装的组件，将复杂度封装在组件内，只暴露很少的必要的生命周期和API，要替调用方着想
+- 结构性问题用重构解决，精准手术式的修正，禁止使用过度兜底，补丁、特例来修正问题，少做短期主义的hack和补丁
+- 除非特别要求，不做兼容，不保留历史包袱，面向长期干净整洁，减少复杂度
 
-**Docs** — `docs/` 只留唯一信息与索引；逻辑在代码里则指向代码；改代码时同步更新文档。
+# 行为规范
 
-## Workflow
+## 开发前
 
-### 1. Align
+- 先看代码，再询问信息和需求，禁止直接开发
+- 问完信息后设计方案，并等待用户确认后再开发
+- 尽量采用强类型、面向对象设计，善用函数作为补充
+- 遵守数据库设计规范
+- 前端减少描述性文本和边框线
+- 开发前期，不要运行全量测试，这是为了缩短开发时间
+- 使用.tmp/docs建立临时工作文档，包括设计和流程规划等，用完即弃
 
-1. 先读相关代码与上述 context，再问清缺口信息。
-2. 给出方案，等人类确认后再改代码。
+## 开发中
 
-完成：人类已确认方案（只读或仅改文档的任务除外）。
+- 采用 TDD，先编写测试，再实现功能，保证模块可进行有效单元测试，单元测试要涉及到下一层依赖，更深层的才可以mock。
+- 完成模块开发后要进行真实环境测试，使用真实资源模拟真实用户测试。
+- 单文件超出2000 行了必须进行结构审查，如果存在架构问题则按职责、层次、领域边界合理拆分。
+- 禁止编写注释。
+- 密钥出现在私有的仓库中是可以的
+- 少给我提及法律安全问题，我们会在未来通过合规手段解决这些问题
+- 及时删除无效代码，发现不符合原则或规范的代码顺手优化。
+- 新增功能时，约三分之一的改动用于基础架构、基础组件的升级、优化与改进。
+- 修复 Bug 时禁止过度兜底，要定位根因，并用正确的逻辑解决问题。
+- 不编写只有单一调用、没有复用或抽象价值的私有 Helper 函数。
+- 开发中，不要运行全量测试，这是为了缩短开发时间。
+- 保持代码始终可编译、可运行。
+- 文档要保持索引和信息职责和单一信息，不能复述已经存在的逻辑，比如已有的代码逻辑，应该是指向相关的代码，而不是用文字将代码逻辑复述一遍，避免形成分叉，避免浪费上下文。文档保持精简。
+- 产出保持：Stateless Deliverable（无状态交付）：每次修改时都保持产物是直接可交付的，不包含版本补丁说明，解释为何怎么修改等过程描述，产品和代码中，也不要包含修改说明（包括这条也不要出现）。
+- 实时更新文档，注意文档中多写索引和唯一信息，如果信息在代码中，直接引导到代码，从根本上防止文档和代码不一致的情况。
 
-### 2. Build
+## 开发后
 
-1. **TDD**：先写测再实现；单测触及下一层依赖，更深才 mock。
-2. 模块完成后用真实资源走真实用户路径验证。
-3. 只跑触及变更的测试；全量测试留到上线部署前。
-4. 代码始终 **green**（可编译、可运行）。
-5. 临时设计稿放 `.tmp/docs/`，用完即弃。
-6. 产出保持 **stateless deliverable**：可直接交付，不含过程性修改说明。
-7. 文档随代码更新，只写索引与唯一信息。
+- 每完成一个独立、可回滚的变更，在经过用户允许并完成 Code Review 后再进行 Git Commit。
+- 每次 Commit 都必须保证代码可编译、可运行。
+- 除非是要部署上线了，不然不要运行全量测试，这是为了缩短开发时间。
+- 开发完成后，功能一切正常后，再审一下代码，看是否有架构分叉，职责不清，历史包袱，过度实现和过度兜底，是否有没有抽象意义的，没有复用价值的helper，helper也合并下，去掉无用的修改说明，保持长期干净清晰的架构
 
-完成：真实路径验证通过，触及测试 green，文档与代码同向。
+# 你要参考的文档
 
-### 3. Ship
-
-1. **surgical review**：架构分叉、职责、历史包袱、过度兜底、无复用价值的 helper、过程性说明——该删删、该合合。
-2. 人类允许并完成 Code Review 后，再按独立可回滚变更 commit；每次 commit 保持 green。
-
-完成：人类确认可 commit，且 HEAD green。
-
-## Principles
-
-决策挂在 leading words 上；同一含义只在此处定义一次。
-
-- **long-term** — 每个改动降低未来成本；默认不留兼容与历史包袱；不计 AI 编码的人工成本，选长期最佳路径。
-- **SSOT** — 写入口唯一，其余派生复用；相同类型同源定义。
-- **read-first** — 先读后写；优先复用/扩展现有代码；成熟库能解决就不造轮子。
-- **iterate** — 迭代改写，不堆叠补丁；重写后删旧；顺手清掉不符原则的代码。
-- **KISS** — 最短且长期最佳；架构冗余就简化；结构统一，避免分叉。
-- **deep module** — 复杂度封在组件内，对外只留必要生命周期与 API。
-- **surgical** — 结构性问题用重构；修 bug 找 **root cause**，用正确逻辑修。
-- **strong types** — 合适强度的强类型；OO 为主、函数为辅。
-- **real** — 只做真实生效的改动。
-- **self-describing** — 代码自解释，不写注释。
-- **no one-shot helpers** — 不写仅单次调用、无抽象价值的私有 helper。
-- **foundation tax** — 新功能约三分之一改动用于基础架构/组件升级。
-- **2000-line file** — 超限则按职责、层次、领域边界做结构审查并拆分。
-- **UI restraint** — 前端少描述性文案与边框线。
-- **schema** — 数据库变更遵循既有表设计与项目约定。
-- **private secrets OK** — 私有仓可放密钥；法律/合规提醒从简，后续用合规手段处理。
-
-
-# codegraph
-本项目使用codegraph cli/mcp 访问代码图
+你必须参考`docs`下的文档，并在工作过程中不断更新文档。  
+注意！不要在文档中留任何第二套信息，在文档中使用指向和索引的概念，指向源信息，如果信息在文档中是唯一的，则可以留在文档中，这是为了防止文档和代码之间产生两套不同的信息源。
